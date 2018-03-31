@@ -33,22 +33,6 @@ func NewKalmanFilter() (k *KalmanFilter) {
 	return k
 }
 
-func (k *KalmanFilter) State() (state [2]float64) {
-	return k.x
-}
-
-func (k *KalmanFilter) StateCovariance() (cov [2][2]float64) {
-	return k.p
-}
-
-func (k *KalmanFilter) ProcessNoise() (cov [2][2]float64) {
-	return k.q
-}
-
-func (k *KalmanFilter) SetProcessNoise(q [2][2]float64) {
-	k.q = q
-}
-
 func (k *KalmanFilter) runFilter() {
 	var (
 		a, nHat, s, w1, w2, y float64
@@ -88,4 +72,20 @@ func (k *KalmanFilter) runFilter() {
 
 func calcMagField(x [2]float64, u float64) (n float64) {
 		return x[0]*u + x[1]
+}
+
+func (k *KalmanFilter) State() (state [2]float64) {
+	return k.x
+}
+
+func (k *KalmanFilter) StateCovariance() (cov [2][2]float64) {
+	return k.p
+}
+
+func (k *KalmanFilter) ProcessNoise() (cov [2][2]float64) {
+	return k.q
+}
+
+func (k *KalmanFilter) SetProcessNoise(q [2][2]float64) {
+	k.q = q
 }
