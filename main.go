@@ -49,7 +49,7 @@ func main() {
 				m = (+kalman.N0-l)/k
 				fmt.Printf("Sending value %1.3f\n", m)
 			}
-			kf.U <- m
+			kf.U <- []float64{m}
 			kf.Z <- kalman.N0*kalman.N0
 			printState()
 			fmt.Println()

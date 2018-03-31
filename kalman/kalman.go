@@ -7,25 +7,25 @@ const (
 )
 
 type KalmanFilter struct {
-	x [2]float64       // Kalman Filter hidden state
-	p [2][2]float64    // Kalman Filter hidden state covariance
-	q [2][2]float64    // Kalman Filter state noise process
+	x []float64       // Kalman Filter hidden state
+	p [][]float64    // Kalman Filter hidden state covariance
+	q [][]float64    // Kalman Filter state noise process
 	r float64          // Measurement noise
-	u float64          // Control vector, measured mag vector in this case
+	u []float64          // Control vector, measured mag vector in this case
 	z float64          // Measurement vector, earth's mag field strength **2
-	U chan float64   // Channel for sending new control values to Kalman Filter
+	U chan []float64   // Channel for sending new control values to Kalman Filter
 	Z chan float64   // Channel for sending new measurements to Kalman Filter
 }
 
 func NewKalmanFilter() (k *KalmanFilter) {
 	k = new(KalmanFilter)
 
-	k.x = [2]float64{1, 0}
-	k.p = [2][2]float64{{NSigma * NSigma, 0}, {0, NSigma * NSigma /(N0*N0)}}
-	k.q = [2][2]float64{{Epsilon * Epsilon, 0}, {0, Epsilon * Epsilon /(N0*N0)}}
+	k.x = []float64{1, 0}
+	k.p = [][]float64{{NSigma * NSigma, 0}, {0, NSigma * NSigma /(N0*N0)}}
+	k.q = [][]float64{{Epsilon * Epsilon, 0}, {0, Epsilon * Epsilon /(N0*N0)}}
 	k.r = N0*N0*NSigma*NSigma
 
-	k.U = make(chan float64)
+	k.U = make(chan []float64)
 	k.Z = make(chan float64)
 
 	go k.runFilter()
@@ -35,7 +35,8 @@ func NewKalmanFilter() (k *KalmanFilter) {
 
 func (k *KalmanFilter) runFilter() {
 	var (
-		a, nHat, s, w1, w2, y float64
+		a, s, w1, w2, y float64
+		nHat            []float64
 	)
 
 	for {
@@ -52,16 +53,16 @@ func (k *KalmanFilter) runFilter() {
 			}
 		case k.z = <-k.Z:
 			// Calculate measurement residual
-			w1 = k.u*k.p[0][0] + k.p[0][1]
-			w2 = k.u*k.p[0][1] + k.p[1][1]
-			s = k.r + 4*nHat*nHat*(k.u*w1 + w2)
-			y = k.z - nHat*nHat
-			a = 2*nHat/s
+			w1 = k.u[0]*k.p[0][0] + k.p[0][1]
+			w2 = k.u[0]*k.p[0][1] + k.p[1][1]
+			s = k.r + 4*nHat[0]*nHat[0]*(k.u[0]*w1 + w2)
+			y = k.z - nHat[0]*nHat[0]
+			a = 2*nHat[0]/s
 			// State correction
 			k.x[0] += a*y*w1
 			k.x[1] += a*y*w2
 			// State covariance correction
-			a = 2*nHat*a
+			a = 2*nHat[0]*a
 			k.p[0][0] -= a*w1*w1
 			k.p[0][1] -= a*w1*w2
 			k.p[1][0] -= a*w2*w1
@@ -70,22 +71,26 @@ func (k *KalmanFilter) runFilter() {
 	}
 }
 
-func calcMagField(x [2]float64, u float64) (n float64) {
-		return x[0]*u + x[1]
+func calcMagField(x, u []float64) (n []float64) {
+	n = make([]float64, len(u))
+	for i:=0; i<len(u); i++ {
+		n[i] = x[2*i]*u[i] + x[2*i+1]
+	}
+	return n
 }
 
-func (k *KalmanFilter) State() (state [2]float64) {
+func (k *KalmanFilter) State() (state []float64) {
 	return k.x
 }
 
-func (k *KalmanFilter) StateCovariance() (cov [2][2]float64) {
+func (k *KalmanFilter) StateCovariance() (cov [][]float64) {
 	return k.p
 }
 
-func (k *KalmanFilter) ProcessNoise() (cov [2][2]float64) {
+func (k *KalmanFilter) ProcessNoise() (cov [][]float64) {
 	return k.q
 }
 
-func (k *KalmanFilter) SetProcessNoise(q [2][2]float64) {
+func (k *KalmanFilter) SetProcessNoise(q [][]float64) {
 	k.q = q
 }
