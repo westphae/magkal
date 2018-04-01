@@ -41,7 +41,7 @@ func NewKalmanFilter(n int) (k *KalmanFilter) {
 		k.q[2*i+1][2*i+1] = Epsilon * Epsilon /(N0*N0)
 	}
 
-	k.r = [][]float64{{N0*N0*NSigma*NSigma}}
+	k.r = [][]float64{{N0*N0*Epsilon*Epsilon}}
 
 	k.U = make(chan [][]float64)
 	k.Z = make(chan [][]float64)
