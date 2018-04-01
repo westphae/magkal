@@ -21,7 +21,7 @@ func main() {
 		m   float64
 	)
 
-	kf = kalman.NewKalmanFilter()
+	kf = kalman.NewKalmanFilter(1)
 
 	fmt.Println("Initial state:")
 	printState()
@@ -31,7 +31,6 @@ func main() {
 		for {
 			fmt.Print("> ")
 			fmt.Scan(&inp)
-			fmt.Printf("Input was %s\n", inp)
 
 			if len(inp)==0 {
 				continue Loop
@@ -49,8 +48,8 @@ func main() {
 				m = (+kalman.N0-l)/k
 				fmt.Printf("Sending value %1.3f\n", m)
 			}
-			kf.U <- []float64{m}
-			kf.Z <- kalman.N0*kalman.N0
+			kf.U <- [][]float64{{m}}
+			kf.Z <- [][]float64{{kalman.N0*kalman.N0}}
 			printState()
 			fmt.Println()
 		}
@@ -58,7 +57,7 @@ func main() {
 
 func printState() {
 	x := kf.State()
-	fmt.Printf("K: %1.3f L: %1.3f\n", x[0], x[1])
+	fmt.Printf("K: %1.3f L: %1.3f\n", x[0][0], x[1][0])
 
 	p := kf.StateCovariance()
 	fmt.Printf("Cov: [%1.6f %1.6f]\n     [%1.6f %1.6f]\n", p[0][0], p[0][1], p[1][0], p[1][1])
