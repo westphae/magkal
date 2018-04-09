@@ -3,7 +3,7 @@ package kalman
 const (
 	N0     = 1.0     // Strength of Earth's magnetic field at current location
 	NSigma = 0.1     // Initial uncertainty scale
-	Epsilon = 1e-6   // Some tiny noise scale
+	Epsilon = 1e-2   // Some tiny noise scale
 )
 
 type KalmanFilter struct {
@@ -37,8 +37,8 @@ func NewKalmanFilter(n int) (k *KalmanFilter) {
 
 		k.q[2*i] = make([]float64, 2*n)
 		k.q[2*i+1] = make([]float64, 2*n)
-		k.q[2*i][2*i] = Epsilon * Epsilon
-		k.q[2*i+1][2*i+1] = Epsilon * Epsilon /(N0*N0)
+		k.q[2*i][2*i] = Epsilon * Epsilon / (86400*10)
+		k.q[2*i+1][2*i+1] = Epsilon * Epsilon /(N0*N0) / (86400*10)
 	}
 
 	k.r = [][]float64{{N0*N0*Epsilon*Epsilon}}

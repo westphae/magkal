@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"os"
 	"strconv"
 
 	"github.com/westphae/magkal/kalman"
 )
 
 const (
-	n = 2
 	deg = math.Pi/180
 )
 
@@ -21,10 +21,20 @@ var (
 
 func main() {
 	var (
-		inp           string
-		mx, my, theta float64
-		err           error
+		inp         string
+		i, n        int
+		mx, my, psi float64
+		psis        []float64
+		err         error
 	)
+
+	nStr := os.Args
+	if len(nStr)==1 {
+		n = 2
+	} else if n, err = strconv.Atoi(nStr[1]); err != nil {
+		n = 2
+	}
+	fmt.Printf("n = %d\n", n)
 
 	x0 = make([]float64, 2*n)
 	for i:=0; i<n; i++ {
@@ -38,41 +48,50 @@ func main() {
 	printState()
 	fmt.Println()
 
-	for {
-		fmt.Print("> ")
-		fmt.Scan(&inp)
+	Loop:
+		for {
+			fmt.Print("> ")
+			fmt.Scan(&inp)
 
-		if len(inp)==0 {
-			continue
+			switch {
+			case len(inp) == 0:
+				continue Loop
+			case inp[0:1] == "q":
+				fmt.Println("Exiting")
+				break Loop
+			case inp[0:1] == "a":
+				psis = make([]float64, 0, 360)
+				for i=0; i<360; i+=30 {
+					psis = append(psis, float64(i))
+				}
+			default:
+				psi, err = strconv.ParseFloat(inp, 64)
+				if err != nil {
+					continue Loop
+				}
+				psis = []float64{psi}
+			}
+
+			for i, psi = range psis {
+				fmt.Printf("Psi: %1.1f\n", psi)
+				mx = (kalman.N0*math.Cos(psi*deg) - x0[1]) / x0[0]
+				my = (kalman.N0*math.Sin(psi*deg) - x0[3]) / x0[2]
+				mx += kalman.Epsilon * math.Sqrt(2) * rand.NormFloat64()
+				my += kalman.Epsilon * math.Sqrt(2) * rand.NormFloat64()
+				fmt.Printf("Sending values (%1.3f, %1.3f)\n", mx, my)
+				kf.U <- [][]float64{{mx}, {my}}
+				kf.Z <- [][]float64{{kalman.N0 * kalman.N0}}
+				printState()
+				fmt.Println()
+			}
 		}
-
-		if inp[0:1]=="q" {
-			fmt.Println("Exiting")
-			break
-		}
-
-		theta, err = strconv.ParseFloat(inp, 64)
-		if err != nil {
-			continue
-		}
-
-		mx = (kalman.N0*math.Cos(theta*deg)-x0[1])/x0[0]
-		my = (kalman.N0*math.Sin(theta*deg)-x0[3])/x0[2]
-		fmt.Printf("Sending values (%1.3f, %1.3f)\n", mx, my)
-		kf.U <- [][]float64{{mx}, {my}}
-		kf.Z <- [][]float64{{kalman.N0*kalman.N0}}
-		printState()
-		fmt.Println()
-	}
 }
 
 func printState() {
 	x := kf.State()
-	//fmt.Printf("X: %1.3f L: %1.3f\n", x[0][0], x[1][0])
 	fmt.Printf(" X: %v\n", x)
 	fmt.Printf("X0: %v\n", x0)
 
 	p := kf.StateCovariance()
-	//fmt.Printf("Cov: [%1.6f %1.6f]\n     [%1.6f %1.6f]\n", p[0][0], p[0][1], p[1][0], p[1][1])
 	fmt.Printf("P: %v\n", p)
 }
