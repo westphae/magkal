@@ -51,7 +51,7 @@ func main() {
 	Loop:
 		for {
 			fmt.Print("> ")
-			fmt.Scan(&inp)
+			_, _ = fmt.Scan(&inp)
 
 			switch {
 			case len(inp) == 0:
@@ -59,15 +59,20 @@ func main() {
 			case inp[0:1] == "q":
 				fmt.Println("Exiting")
 				break Loop
-			case inp[0:1] == "a":
+			case inp[0:1] == "a" && n==2:
 				psis = make([]float64, 0, 360)
 				for i=0; i<360; i+=30 {
 					psis = append(psis, float64(i))
 				}
+			case inp[0:1] == "a" && n==1:
+				psis = []float64{0, 180}
 			default:
 				psi, err = strconv.ParseFloat(inp, 64)
 				if err != nil {
 					continue Loop
+				}
+				if psi>0 {
+					psi = 180
 				}
 				psis = []float64{psi}
 			}
@@ -75,11 +80,16 @@ func main() {
 			for i, psi = range psis {
 				fmt.Printf("Psi: %1.1f\n", psi)
 				mx = (kalman.N0*math.Cos(psi*deg) - x0[1]) / x0[0]
-				my = (kalman.N0*math.Sin(psi*deg) - x0[3]) / x0[2]
 				mx += kalman.Epsilon * math.Sqrt(2) * rand.NormFloat64()
-				my += kalman.Epsilon * math.Sqrt(2) * rand.NormFloat64()
-				fmt.Printf("Sending values (%1.3f, %1.3f)\n", mx, my)
-				kf.U <- [][]float64{{mx}, {my}}
+				if n==1 {
+					fmt.Printf("Sending values (%1.3f)\n", mx)
+					kf.U <- [][]float64{{mx}}
+				} else {
+					my = (kalman.N0*math.Sin(psi*deg) - x0[3]) / x0[2]
+					my += kalman.Epsilon * math.Sqrt(2) * rand.NormFloat64()
+					fmt.Printf("Sending values (%1.3f, %1.3f)\n", mx, my)
+					kf.U <- [][]float64{{mx}, {my}}
+				}
 				kf.Z <- [][]float64{{kalman.N0 * kalman.N0}}
 				printState()
 				fmt.Println()
