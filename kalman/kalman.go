@@ -1,12 +1,6 @@
 package kalman
 
-const (
-	N0     = 1.0     // Strength of Earth's magnetic field at current location
-	NSigma = 0.1     // Initial uncertainty scale
-	Epsilon = 1e-2   // Some tiny noise scale
-)
-
-type KalmanFilter struct {
+type State struct {
 	n int              // Number of dimensions
 	x [][]float64      // Kalman Filter hidden state
 	p [][]float64      // Kalman Filter hidden state covariance
@@ -18,8 +12,14 @@ type KalmanFilter struct {
 	Z chan [][]float64 // Channel for sending new measurements to Kalman Filter
 }
 
-func NewKalmanFilter(n int) (k *KalmanFilter) {
-	k = new(KalmanFilter)
+/* NewKalmanFilter returns a State struct with Kalman Filter methods for calibrating a magnetometer.
+   n is the number of dimensions (1, 2 for testing; 3 for reality)
+   n0 is the strength of the Earth's magnetic field at the current location, 1.0 is fine for testing
+   nSigma is the initial uncertainty scale for k (nSigma*n0 for l), 0.1 seems about right
+   epsilon is a tiny noise scale, maybe 0.01
+ */
+func NewKalmanFilter(n int, n0 float64, nSigma float64, epsilon float64) (k *State) {
+	k = new(State)
 	k.n = n
 
 	k.x = make([][]float64, 2*n)
@@ -32,16 +32,16 @@ func NewKalmanFilter(n int) (k *KalmanFilter) {
 
 		k.p[2*i] = make([]float64, 2*n)
 		k.p[2*i+1] = make([]float64, 2*n)
-		k.p[2*i][2*i] = NSigma * NSigma
-		k.p[2*i+1][2*i+1] = NSigma * NSigma /(N0*N0)
+		k.p[2*i][2*i] = nSigma * nSigma
+		k.p[2*i+1][2*i+1] = nSigma * nSigma /(n0*n0)
 
 		k.q[2*i] = make([]float64, 2*n)
 		k.q[2*i+1] = make([]float64, 2*n)
-		k.q[2*i][2*i] = Epsilon * Epsilon / (86400*10)
-		k.q[2*i+1][2*i+1] = Epsilon * Epsilon /(N0*N0) / (86400*10)
+		k.q[2*i][2*i] = epsilon * epsilon / (86400*0.01)
+		k.q[2*i+1][2*i+1] = epsilon * epsilon /(n0*n0) / (86400*0.01)
 	}
 
-	k.r = [][]float64{{N0*N0*Epsilon*Epsilon}}
+	k.r = [][]float64{{n0*n0*epsilon*epsilon}}
 
 	k.U = make(chan [][]float64)
 	k.Z = make(chan [][]float64)
@@ -51,7 +51,7 @@ func NewKalmanFilter(n int) (k *KalmanFilter) {
 	return k
 }
 
-func (k *KalmanFilter) runFilter() {
+func (k *State) runFilter() {
 	var (
 		y              float64
 		h, s, kk, nHat [][]float64
@@ -115,18 +115,18 @@ func calcMagField(x, u [][]float64) (n [][]float64) {
 	return n
 }
 
-func (k *KalmanFilter) State() (state [][]float64) {
+func (k *State) State() (state [][]float64) {
 	return k.x
 }
 
-func (k *KalmanFilter) StateCovariance() (cov [][]float64) {
+func (k *State) StateCovariance() (cov [][]float64) {
 	return k.p
 }
 
-func (k *KalmanFilter) ProcessNoise() (cov [][]float64) {
+func (k *State) ProcessNoise() (cov [][]float64) {
 	return k.q
 }
 
-func (k *KalmanFilter) SetProcessNoise(q [][]float64) {
+func (k *State) SetProcessNoise(q [][]float64) {
 	k.q = q
 }
