@@ -18,7 +18,7 @@ const (
 )
 
 var (
-	kf *kalman.State
+	kf *kalman.Filter
 	x0 []float64
 )
 

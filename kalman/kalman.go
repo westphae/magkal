@@ -1,6 +1,6 @@
 package kalman
 
-type State struct {
+type Filter struct {
 	n int              // Number of dimensions
 	x [][]float64      // Kalman Filter hidden state
 	p [][]float64      // Kalman Filter hidden state covariance
@@ -12,14 +12,14 @@ type State struct {
 	Z chan [][]float64 // Channel for sending new measurements to Kalman Filter
 }
 
-/* NewKalmanFilter returns a State struct with Kalman Filter methods for calibrating a magnetometer.
+/* NewKalmanFilter returns a Filter struct with Kalman Filter methods for calibrating a magnetometer.
    n is the number of dimensions (1, 2 for testing; 3 for reality)
    n0 is the strength of the Earth's magnetic field at the current location, 1.0 is fine for testing
    nSigma is the initial uncertainty scale for k (nSigma*n0 for l), 0.1 seems about right
    epsilon is a tiny noise scale, maybe 0.01
  */
-func NewKalmanFilter(n int, n0 float64, nSigma float64, epsilon float64) (k *State) {
-	k = new(State)
+func NewKalmanFilter(n int, n0 float64, nSigma float64, epsilon float64) (k *Filter) {
+	k = new(Filter)
 	k.n = n
 
 	k.x = make([][]float64, 2*n)
@@ -51,7 +51,7 @@ func NewKalmanFilter(n int, n0 float64, nSigma float64, epsilon float64) (k *Sta
 	return k
 }
 
-func (k *State) runFilter() {
+func (k *Filter) runFilter() {
 	var (
 		y              float64
 		h, s, kk, nHat [][]float64
@@ -115,18 +115,18 @@ func calcMagField(x, u [][]float64) (n [][]float64) {
 	return n
 }
 
-func (k *State) State() (state [][]float64) {
+func (k *Filter) State() (state [][]float64) {
 	return k.x
 }
 
-func (k *State) StateCovariance() (cov [][]float64) {
+func (k *Filter) StateCovariance() (cov [][]float64) {
 	return k.p
 }
 
-func (k *State) ProcessNoise() (cov [][]float64) {
+func (k *Filter) ProcessNoise() (cov [][]float64) {
 	return k.q
 }
 
-func (k *State) SetProcessNoise(q [][]float64) {
+func (k *Filter) SetProcessNoise(q [][]float64) {
 	k.q = q
 }
