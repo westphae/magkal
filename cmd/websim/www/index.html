@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>MagKal Web Simulator</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    <link rel="stylesheet" type="text/css" href="css/materialize.css" media="screen,projection">
+    <link rel="stylesheet" type="text/css" href="css/style.css">
+</head>
+<body>
+<header>
+    <nav>
+        <div class="nav-wrapper">
+            <a href="/" class="brand-logo right">MagKal Web Simulator</a>
+        </div>
+    </nav>
+</header>
+
+<main id="app">
+    <div class="row">
+        <div class="input-field col s2">
+            <select v-model="source">
+                <option value="0">Manual</option>
+                <option value="1">Random</option>
+            </select>
+            <label>Source of Magnetometer Data</label>
+        </div>
+        <div class="input-field col s2">
+            <input type="number" v-model.number="n" @change="check_n()">
+            <label>Number of Dimensions</label>
+        </div>
+    </div>
+    <div class="row">
+        <div class="input-field col s3">
+            <input type="number" v-model.number="n0" @change="check_n0()">
+            <label>Strength of Earth's Magnetic Field</label>
+        </div>
+        <div class="input-field col s3">
+            <input type="number" v-model.number="nSigma" @change="check_nSigma()">
+            <label>Std of Noise for k</label>
+        </div>
+        <div class="input-field col s3">
+            <input type="number" v-model.number="epsilon" @change="check_epsilon()">
+            <label>Small noise scale</label>
+        </div>
+    </div>
+    <div class="row">
+        <div class="input-field col s12">
+            <button class="btn" @click="start()">Start</button>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col s12">
+            <div class="card horizontal">
+                <div id="messages" class="card-content" v-html="msgContent">
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<footer class="page-footer">
+</footer>
+<script type="text/javascript" src="js/vue.js"></script>
+<script type="text/javascript" src="js/materialize.js"></script>
+<script type="text/javascript" src="js/app.js"></script>
+</body>
+</html>
