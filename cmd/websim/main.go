@@ -91,12 +91,10 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		log.Print(p)
+		// For testing: just return the params
+		if err = conn.WriteJSON(p); err != nil {
+			log.Printf("Error writing to websocket: %s\n", err)
+		}
 	}
 	log.Println("Closing client")
 }
-
-/*
-if err = conn.WriteJSON(<-myData); err != nil {
-	log.Printf("Error writing to websocket: %s\n", err)
-}
- */

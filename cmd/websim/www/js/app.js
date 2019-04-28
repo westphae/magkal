@@ -1,4 +1,5 @@
-var params = {};
+var params = {},
+    self;
 
 vm = new Vue({
     el: '#app',
@@ -15,7 +16,7 @@ vm = new Vue({
     },
 
     created: function() {
-        var self = this;
+        self = this;
         this.ws = new WebSocket('ws://' + window.location.host + '/websocket');
         this.ws.addEventListener('message', handleMessages);
 
@@ -54,7 +55,7 @@ vm = new Vue({
                 epsilon: this.epsilon
             };
 
-            console.log(JSON.stringify(params));
+            console.log("sent: " + JSON.stringify(params));
             this.ws.send(
                 JSON.stringify(params)
             );
@@ -63,8 +64,13 @@ vm = new Vue({
 });
 
 function handleMessages(e) {
+    console.log("received: " + e.data);
     var msg = JSON.parse(e.data);
-    self.msgContent += msg + '<br/>';
+    self.msgContent += '<div class="chip">' +
+        JSON.stringify(msg) +
+        '</div>' +
+        '<br/>';
+    console.log(self.msgContent);
 
     var element = document.getElementById('messages');
     element.scrollTop = element.scrollHeight; // Auto scroll to the bottom
