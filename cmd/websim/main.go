@@ -27,6 +27,16 @@ type params struct {
 	Epsilon float64    `json:"epsilon"` // Noise scale for measurement and process noise
 }
 
+type measureCmd struct {
+	Theta float64 `json:"theta"` // Raw theta of measurement, pre-noise, in radians
+	Phi   float64 `json:"phi"`   // Raw phi of measurement, pre-noise, in radians
+}
+
+type message struct {
+	Params  *params     // if the message contains new params
+	Measure *measureCmd // if the message contains a measurement command
+}
+
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
@@ -85,16 +95,27 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	})
 
 	// Read messages from the client and receive control messages
+	/*
+	1. Receive websocket message, determine type
+	2. If type is params:
+	   a. stop/close any current sim (send a nil measurement)
+	   b. initialize a new sim
+	   c. send reset command to client
+	3. If type is measure:
+	   a. create a measurement according to source
+	   b. send to filter
+	   c. send result to client
+	 */
 	log.Println("Listening for messages from a new client")
-	var p params
+	var msg message
 	for {
-		if err = conn.ReadJSON(&p); err != nil {
+		if err = conn.ReadJSON(&msg); err != nil {
 			log.Printf("Error reading from websocket: %s\n", err)
 			break
 		}
-		log.Print(p)
+		log.Print(msg)
 		// For testing: just return the params
-		if err = conn.WriteJSON(p); err != nil {
+		if err = conn.WriteJSON(msg); err != nil {
 			log.Printf("Error writing to websocket: %s\n", err)
 		}
 	}
