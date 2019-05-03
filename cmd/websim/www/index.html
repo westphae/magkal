@@ -8,45 +8,88 @@
     <link rel="stylesheet" type="text/css" href="css/style.css">
 </head>
 <body>
-<header>
-    <nav>
-        <div class="nav-wrapper">
-            <a href="/" class="brand-logo right">MagKal Web Simulator</a>
-        </div>
-    </nav>
-</header>
-
 <main id="app">
+    <header>
+        <nav>
+            <div class="nav-wrapper">
+                <span class="connected" v-if="connected">Connected</span>
+                <span class="disconnected" v-else>Disconnected</span>
+                <a href="/" class="brand-logo right">MagKal Web Simulator</a>
+            </div>
+        </nav>
+    </header>
+
     <div class="row">
-        <div class="input-field col s2">
-            <select v-model="source">
-                <option value="0">Manual</option>
-                <option value="1">Random</option>
-            </select>
-            <label>Source of Magnetometer Data</label>
+        <div class="col s6">
+            <div class="row">
+                <div class="input-field col s4">
+                    <select v-model="source">
+                        <option value="0">Manual</option>
+                        <option value="1">Random</option>
+                    </select>
+                    <label>Magnetometer Data Source</label>
+                </div>
+                <div class="input-field col s4">
+                    <input type="number" v-model.number="n" @change="check_n()">
+                    <label>Number of Dimensions</label>
+                </div>
+                <div class="input-field col s4">
+                    <input type="number" v-model.number="n0" @change="check_n0()">
+                    <label>Magnetic Field Strength</label>
+                </div>
+            </div>
+            <div class="row" v-if="source==0 || source==1">
+                <div class="col s4">
+                    <div class="input-field col s12">
+                        <input type="number" v-model.number="kAct[0]" @change="check_kAct()">
+                        <label>Actual k0</label>
+                    </div>
+                    <div class="input-field col s12">
+                        <input type="number" v-model.number="lAct[0]" @change="check_lAct()">
+                        <label>Actual l0</label>
+                    </div>
+                </div>
+                <div class="col s4" v-if="n>=2">
+                    <div class="input-field col s12">
+                        <input type="number" v-model.number="kAct[1]" @change="check_kAct()">
+                        <label>Actual k1</label>
+                    </div>
+                    <div class="input-field col s12">
+                        <input type="number" v-model.number="lAct[1]" @change="check_lAct()">
+                        <label>Actual l1</label>
+                    </div>
+                </div>
+                <div class="col s4" v-if="n==3">
+                    <div class="input-field col s12">
+                        <input type="number" v-model.number="kAct[2]" @change="check_kAct()">
+                        <label>Actual k2</label>
+                    </div>
+                    <div class="input-field col s12">
+                        <input type="number" v-model.number="lAct[2]" @change="check_lAct()">
+                        <label>Actual l2</label>
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="input-field col s3">
+                    <input type="number" v-model.number="nSigma" @change="check_nSigma()">
+                    <label>k Noise</label>
+                </div>
+                <div class="input-field col s3">
+                    <input type="number" v-model.number="epsilon" @change="check_epsilon()">
+                    <label>Small noise scale</label>
+                </div>
+            </div>
+            <div class="row">
+                <div class="input-field col s12">
+                    <button class="btn col s3" @click="restart()" v-if="check_params_changed()">Restart</button>
+                    <button class="btn col s3" @click="measureMany()" v-if="!check_params_changed() && source==1 && !measuring">Measure Many</button>
+                    <button class="btn col s3" @click="measureOnce()" v-if="!check_params_changed() && source==1 && !measuring">Measure Once</button>
+                    <button class="btn col s3" @click="pause()" v-if="!check_params_changed() && source==1 && measuring">Pause</button>
+                </div>
+            </div>
         </div>
-        <div class="input-field col s2">
-            <input type="number" v-model.number="n" @change="check_n()">
-            <label>Number of Dimensions</label>
-        </div>
-    </div>
-    <div class="row">
-        <div class="input-field col s3">
-            <input type="number" v-model.number="n0" @change="check_n0()">
-            <label>Strength of Earth's Magnetic Field</label>
-        </div>
-        <div class="input-field col s3">
-            <input type="number" v-model.number="nSigma" @change="check_nSigma()">
-            <label>Std of Noise for k</label>
-        </div>
-        <div class="input-field col s3">
-            <input type="number" v-model.number="epsilon" @change="check_epsilon()">
-            <label>Small noise scale</label>
-        </div>
-    </div>
-    <div class="row">
-        <div class="input-field col s12">
-            <button class="btn" @click="start()">Start</button>
+        <div class="col s6">
         </div>
     </div>
     <div class="row">

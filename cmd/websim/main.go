@@ -18,11 +18,13 @@ const (
 )
 
 type params struct {
-	Source  source `json:"source"`   // Source of the magnetometer data
-	N       int     `json:"n"`       // Number of dimensions
-	N0      float64 `json:"n0"`      // Value of Earth's magnetic field at location
-    NSigma  float64 `json:"nSigma"`  // Initial noise scale for k
-    Epsilon float64 `json:"epsilon"` // Noise scale for measurement and process noise
+	Source  source    `json:"source"`   // Source of the magnetometer data
+	N       int        `json:"n"`       // Number of dimensions
+	N0      float64    `json:"n0"`      // Value of Earth's magnetic field at location
+	KAct    *[]float64 `json:"kAct"`    // Actual K for manual, random measurement sources
+	LAct    *[]float64 `json:"lAct"`    // Actual L for manual, random measurement sources
+	NSigma  float64    `json:"nSigma"`  // Initial noise scale for k
+	Epsilon float64    `json:"epsilon"` // Noise scale for measurement and process noise
 }
 
 var upgrader = websocket.Upgrader{

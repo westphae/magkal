@@ -8,6 +8,13 @@ main {
     flex: 1 0 auto;
 }
 
+.connected {
+    color: lawngreen;
+}
+
+.disconnected {
+    color: red;
+}
 #messages {
     min-height: 10vh;
     height: 60vh;
