@@ -21,11 +21,6 @@ vm = new Vue({
 
     created: function() {
         self = this;
-        this.ws = new WebSocket('ws://' + window.location.host + '/websocket');
-        this.ws.addEventListener('open', function() { self.connected = true; });
-        this.ws.addEventListener('close', function() { self.connected = false; });
-        this.ws.addEventListener('message', handleMessages);
-
         params = {
             source: this.source,
             n: this.n,
@@ -35,6 +30,11 @@ vm = new Vue({
             nSigma: this.nSigma,
             epsilon: this.epsilon
         };
+
+        this.ws = new WebSocket('ws://' + window.location.host + '/websocket');
+        this.ws.addEventListener('open', function() { self.connected = true; });
+        this.ws.addEventListener('close', function() { self.connected = false; });
+        this.ws.addEventListener('message', handleMessages);
     },
 
     methods: {
@@ -50,8 +50,6 @@ vm = new Vue({
         },
         check_kAct: function() {
             var n = parseInt(this.n);
-            console.log("this", this.kAct);
-            console.log("pars", params.kAct);
             if (this.kAct[0]<=0) { this.kAct[0] = params.kAct[0]; }
             if (n>=2 && this.kAct[1]<=0) { this.kAct[1] = params.kAct[1]; }
             if (n===3 && this.kAct[2]<=0) { this.kAct[2] = params.kAct[2]; }
@@ -89,13 +87,20 @@ vm = new Vue({
                 epsilon: this.epsilon
             };
 
+            var msg = {"params": params};
             this.ws.send(
-                JSON.stringify({"params": params})
+                JSON.stringify(msg)
             );
-            console.log("sent: " + JSON.stringify(params));
+            console.log("sent: ");
+            console.log(msg);
         },
         measureOnce: function () {
-            console.log("measuring once");
+            var msg = {"measure": {"m0": [0, 0, 0]}};
+            this.ws.send(
+                JSON.stringify(msg)
+            );
+            console.log("measuring once, sent: ");
+            console.log(msg);
         },
         measureMany: function () {
             this.measuring = true;
@@ -109,14 +114,13 @@ vm = new Vue({
 });
 
 function handleMessages(e) {
-    console.log("received: " + e.data);
     var msg = JSON.parse(e.data);
     self.msgContent += '<div class="chip">' +
         JSON.stringify(msg) +
         '</div>' +
         '<br/>';
-    console.log(self.msgContent);
-    console.log(self.connected);
+    console.log("received:");
+    console.log(msg);
 
     var element = document.getElementById('messages');
     element.scrollTop = element.scrollHeight; // Auto scroll to the bottom

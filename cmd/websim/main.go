@@ -28,13 +28,12 @@ type params struct {
 }
 
 type measureCmd struct {
-	Theta float64 `json:"theta"` // Raw theta of measurement, pre-noise, in radians
-	Phi   float64 `json:"phi"`   // Raw phi of measurement, pre-noise, in radians
+	M0 measurement `json:"m0"` // Raw measurement (for manual), pre-noise
 }
 
 type message struct {
-	Params  *params     // if the message contains new params
-	Measure *measureCmd // if the message contains a measurement command
+	Params  *params     `json:"params"`  // if the message contains new params
+	Measure *measureCmd `json:"measure"` // if the message contains a measurement command
 }
 
 var upgrader = websocket.Upgrader{
@@ -107,15 +106,48 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	   c. send result to client
 	 */
 	log.Println("Listening for messages from a new client")
-	var msg message
+	var (
+		msg message
+		p   params
+		cmd measureCmd
+		myMeasurer measurer
+		myMeasurement measurement
+	)
 	for {
 		if err = conn.ReadJSON(&msg); err != nil {
 			log.Printf("Error reading from websocket: %s\n", err)
 			break
 		}
-		log.Print(msg)
+
+		// Extract any new parameters
+		if msg.Params != nil {
+			p = *msg.Params
+			log.Print(p)
+			switch p.Source {
+			case manual:
+				myMeasurer = makeManualMeasurer(p.N, p.N0, *p.KAct, *p.LAct, p.NSigma*p.N0)
+			case random:
+				myMeasurer = makeRandomMeasurer(p.N, p.N0, *p.KAct, *p.LAct, p.NSigma*p.N0)
+			default:
+				myMeasurer = nil
+				log.Print("Received bad source")
+				break
+			}
+			//continue
+		}
+
+		// Return any requested measurements
+		if msg.Measure != nil {
+			if myMeasurer == nil {
+				log.Print("Received a measure command but haven't set a measurer")
+				continue
+			}
+			cmd = *msg.Measure
+			log.Print(cmd)
+			myMeasurement = myMeasurer(cmd.M0)
+		}
 		// For testing: just return the params
-		if err = conn.WriteJSON(msg); err != nil {
+		if err = conn.WriteJSON(myMeasurement); err != nil {
 			log.Printf("Error writing to websocket: %s\n", err)
 		}
 	}
