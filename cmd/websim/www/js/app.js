@@ -34,7 +34,7 @@ vm = new Vue({
         this.ws = new WebSocket('ws://' + window.location.host + '/websocket');
         this.ws.addEventListener('open', function() { self.connected = true; });
         this.ws.addEventListener('close', function() { self.connected = false; });
-        this.ws.addEventListener('message', handleMessages);
+        this.ws.addEventListener('message', this.handleMessages);
     },
 
     methods: {
@@ -81,8 +81,8 @@ vm = new Vue({
                 source: parseInt(this.source),
                 n: this.n,
                 n0: this.n0,
-                kAct: this.kAct,
-                lAct: this.lAct,
+                kAct: [this.kAct[0], this.kAct[1], this.kAct[2]],
+                lAct: [this.lAct[0], this.lAct[1], this.lAct[2]],
                 nSigma: this.nSigma,
                 epsilon: this.epsilon
             };
@@ -109,22 +109,21 @@ vm = new Vue({
         pause: function () {
             this.measuring = false;
             console.log("pausing");
+        },
+        handleMessages: function(e) {
+            var msg = JSON.parse(e.data);
+            this.msgContent += '<div class="chip">' +
+                JSON.stringify(msg) +
+                '</div>' +
+                '<br/>';
+            console.log("received:");
+            console.log(msg);
+
+            var element = document.getElementById('messages');
+            element.scrollTop = element.scrollHeight; // Auto scroll to the bottom
         }
     }
 });
-
-function handleMessages(e) {
-    var msg = JSON.parse(e.data);
-    self.msgContent += '<div class="chip">' +
-        JSON.stringify(msg) +
-        '</div>' +
-        '<br/>';
-    console.log("received:");
-    console.log(msg);
-
-    var element = document.getElementById('messages');
-    element.scrollTop = element.scrollHeight; // Auto scroll to the bottom
-}
 
 document.addEventListener('DOMContentLoaded', function() {
     var elems = document.querySelectorAll('select');

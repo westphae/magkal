@@ -105,7 +105,6 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	   b. send to filter
 	   c. send result to client
 	 */
-	log.Println("Listening for messages from a new client")
 	var (
 		msg message
 		p   params
@@ -113,6 +112,8 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		myMeasurer measurer
 		myMeasurement measurement
 	)
+
+	log.Println("Listening for messages from a new client")
 	for {
 		if err = conn.ReadJSON(&msg); err != nil {
 			log.Printf("Error reading from websocket: %s\n", err)
@@ -133,7 +134,6 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 				log.Print("Received bad source")
 				break
 			}
-			//continue
 		}
 
 		// Return any requested measurements
@@ -146,6 +146,10 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 			log.Print(cmd)
 			myMeasurement = myMeasurer(cmd.M0)
 		}
+
+		// Clear the message for the next go-around
+		msg = message{}
+
 		// For testing: just return the params
 		if err = conn.WriteJSON(myMeasurement); err != nil {
 			log.Printf("Error writing to websocket: %s\n", err)
