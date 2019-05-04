@@ -95,7 +95,7 @@ vm = new Vue({
             console.log(msg);
         },
         measureOnce: function () {
-            var msg = {"measure": {"m0": [0, 0, 0]}};
+            var msg = {"measure": {"m0": null}};
             this.ws.send(
                 JSON.stringify(msg)
             );
