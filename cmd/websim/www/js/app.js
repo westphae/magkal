@@ -1,5 +1,6 @@
 var params = {},
-    self;
+    self,
+    measureInterval;
 
 vm = new Vue({
     el: '#app',
@@ -16,20 +17,13 @@ vm = new Vue({
         msgContent: '',        // A running list of data messages displayed on the screen
         params: params,        // Actual parameters currently being used, will be replaced by above when sent to server
         measuring: false,      // Are we measuring continuously?
-        connected: false
+        connected: false,      // Whether or not the websocket is connected
+        mxs_update: null,             // M cross-section plot
+        data: {}               // Data to pass into plots
     },
 
     created: function() {
         self = this;
-        params = {
-            source: this.source,
-            n: this.n,
-            n0: this.n0,
-            kAct: this.kAct,
-            lAct: this.lAct,
-            nSigma: this.nSigma,
-            epsilon: this.epsilon
-        };
 
         this.ws = new WebSocket('ws://' + window.location.host + '/websocket');
         this.ws.addEventListener('open', function() { self.connected = true; });
@@ -103,24 +97,78 @@ vm = new Vue({
             console.log(msg);
         },
         measureMany: function () {
+            measureInterval = setInterval(function () {
+                var msg = {"measure": {"m0": null}};
+                self.ws.send(
+                    JSON.stringify(msg)
+                );
+            }, 50);
             this.measuring = true;
             console.log("measuring many");
         },
         pause: function () {
+            clearInterval(measureInterval);
             this.measuring = false;
             console.log("pausing");
         },
         handleMessages: function(e) {
             var msg = JSON.parse(e.data);
-            this.msgContent += '<div class="chip">' +
-                JSON.stringify(msg) +
-                '</div>' +
-                '<br/>';
             console.log("received:");
             console.log(msg);
 
+            // Handle received params
+            if (msg.hasOwnProperty('params') && msg.params!==null) {
+                params = msg['params'];
+                this.params = params;
+                this.source = params.source;
+                this.n = params.n;
+                this.n0 = params.n0;
+                this.kAct = params.kAct;
+                this.lAct = params.lAct;
+                this.nSigma = params.nSigma;
+                this.epsilon = params.epsilon;
+
+                this.data['M1'] = 0;
+                this.data['M2'] = 0;
+                this.data['M3'] = 0;
+                this.data['KAct1'] = this.kAct[0];
+                this.data['KAct2'] = this.kAct[1];
+                this.data['KAct3'] = this.kAct[2];
+                this.data['LAct1'] = this.lAct[0];
+                this.data['LAct2'] = this.lAct[1];
+                this.data['LAct3'] = this.lAct[2];
+                this.data['N0'] = this.n0;
+
+                this.msgContent += '<div class="chip">' +
+                    JSON.stringify(msg.params) +
+                    '</div>' +
+                    '<br/>';
+
+                d3.select('#m-plot').selectAll('svg').remove();
+                this.mxs_update = updateMagXS(1, 2, "#m-plot");
+            }
+
+            // Handle received measurement
+            if (msg.hasOwnProperty('measurement') && msg.measurement!==null) {
+                this.msgContent += '<div class="chip">' +
+                    JSON.stringify(msg.measurement) +
+                    '</div>' +
+                    '<br/>';
+
+                this.data['M1'] = msg.measurement[0];
+                if (this.n>=2) {
+                    this.data['M2'] = msg.measurement[1];
+                }
+                if (this.n===3) {
+                    this.data['M3'] = msg.measurement[2];
+                }
+            }
+
             var element = document.getElementById('messages');
             element.scrollTop = element.scrollHeight; // Auto scroll to the bottom
+
+            this.mxs_update(this.data);
+            console.log(this.data);
         }
     }
 });

@@ -1,0 +1,109 @@
+.svg-container {
+    display: inline-block;
+    position: relative;
+    width: 100%;
+    padding-bottom: 100%;
+    vertical-align: top;
+    overflow: hidden;
+}
+
+.svg-content {
+    display: inline-block;
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+svg {
+    font: 10px sans-serif;
+}
+
+.dot {
+    stroke-width: 1;
+}
+
+.center.actual {
+    fill: black;
+    stroke-width: 2;
+}
+
+.center.estimated {
+    fill: gray;
+    stroke-width: 1;
+}
+
+.ellipse.actual {
+    stroke: black;
+    stroke-width: 2;
+    fill: None;
+}
+
+.ellipse.estimated {
+    stroke: gray;
+    stroke-width: 1;
+    fill: None;
+}
+
+.pointer {
+    stroke: Black;
+    stroke-width: 2;
+}
+
+.line {
+    stroke-width: 2;
+    fill: none;
+}
+
+.area {
+    fill-opacity: 0.4;
+}
+
+.line.x {
+    stroke: Red;
+    color: Red;
+}
+
+.area.x {
+    fill: Red;
+}
+
+.line.y {
+    stroke: Green;
+    color: Green;
+}
+
+.area.y {
+    fill: Green;
+}
+
+.line.z {
+    stroke: Blue;
+    color: Blue;
+}
+
+.area.z {
+    fill: Blue;
+}
+
+.axis path,
+.axis line {
+    fill: none;
+    stroke: black;
+    shape-rendering: crispEdges;
+}
+
+#connected {
+    stroke: black;
+    height: 1em;
+    width: 7em;
+    text-align: center;
+    border: black;
+    border-style: solid;
+}
+#connected.connected {
+    background-color: lawngreen;
+}
+#connected.disconnected {
+    background-color: red;
+    color: white;
+}

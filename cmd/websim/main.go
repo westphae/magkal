@@ -27,13 +27,25 @@ type params struct {
 	Epsilon float64    `json:"epsilon"` // Noise scale for measurement and process noise
 }
 
+// Some sensible default parameters to start the user off
+var defaultParams = params{
+	random,1,1.0,
+	&[]float64{0.8, 0.7, 0.9}, &[]float64{0.1, 0.15, -0.1},
+	0.1, 0.01,
+}
+
 type measureCmd struct {
 	M0 measurement `json:"m0"` // Raw measurement (for manual), pre-noise
 }
 
-type message struct {
-	Params  *params     `json:"params"`  // if the message contains new params
-	Measure *measureCmd `json:"measure"` // if the message contains a measurement command
+type messageIn struct {
+	Params  *params     `json:"params"`  // if the messageIn contains new params
+	Measure *measureCmd `json:"measure"` // if the messageIn contains a measurement command
+}
+
+type messageOut struct {
+	Params      *params      `json:"params"`      // The params the server is using
+	Measurement *measurement `json:"measurement"` // A raw measurement from the magnetometer source
 }
 
 var upgrader = websocket.Upgrader{
@@ -106,53 +118,76 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	   c. send result to client
 	 */
 	var (
-		msg message
-		p   params
-		cmd measureCmd
-		myMeasurer measurer
+		msgIn         messageIn
+		msgOut        messageOut
+		p             params
+		cmd           measureCmd
+		myMeasurer    measurer
 		myMeasurement measurement
 	)
+	p = defaultParams
+
+	// Send initial params
+	msgOut = messageOut{&p, nil, nil, nil}
+	if err = conn.WriteJSON(msgOut); err != nil {
+		log.Printf("Error writing params to websocket: %s\n", err)
+		return
+	}
+	msgOut.Params = nil
 
 	log.Println("Listening for messages from a new client")
 	for {
-		if err = conn.ReadJSON(&msg); err != nil {
+		if err = conn.ReadJSON(&msgIn); err != nil {
 			log.Printf("Error reading from websocket: %s\n", err)
 			break
 		}
+		timeout.Stop() // Stop the timeout if we get a message, not just a pong
 
 		// Extract any new parameters
-		if msg.Params != nil {
-			p = *msg.Params
+		if msgIn.Params != nil {
+			// Parse and implement new params
+			p = *msgIn.Params
+			myMeasurer = nil
 			log.Print(p)
-			switch p.Source {
-			case manual:
-				myMeasurer = makeManualMeasurer(p.N, p.N0, *p.KAct, *p.LAct, p.NSigma*p.N0)
-			case random:
-				myMeasurer = makeRandomMeasurer(p.N, p.N0, *p.KAct, *p.LAct, p.NSigma*p.N0)
-			default:
-				myMeasurer = nil
-				log.Print("Received bad source")
-				break
+			msgIn.Params = nil
+
+			// Return new params and clean up
+			msgOut.Params = &p
+			if err = conn.WriteJSON(msgOut); err != nil {
+				log.Printf("Error writing to websocket: %s\n", err)
 			}
+			msgOut.Params = nil
 		}
 
 		// Return any requested measurements
-		if msg.Measure != nil {
+		if msgIn.Measure != nil {
 			if myMeasurer == nil {
-				log.Print("Received a measure command but haven't set a measurer")
-				continue
+				switch p.Source {
+				case manual:
+					myMeasurer = makeManualMeasurer(p.N, p.N0, *p.KAct, *p.LAct, p.NSigma*p.N0)
+					log.Println("Set Manual measurer")
+				case random:
+					myMeasurer = makeRandomMeasurer(p.N, p.N0, *p.KAct, *p.LAct, p.NSigma*p.N0)
+					log.Println("Set Random measurer")
+				default:
+					myMeasurer = nil
+					log.Printf("Received bad source: %d\n", p.Source)
+					break
+				}
 			}
-			cmd = *msg.Measure
-			log.Print(cmd)
+			cmd = *msgIn.Measure
+			msgIn.Measure = nil
+			log.Printf("Received raw measurement %v\n", cmd)
+
 			myMeasurement = myMeasurer(cmd.M0)
-		}
+			msgOut.Measurement = &myMeasurement
+			log.Printf("Sending measurement %v\n", myMeasurement)
 
-		// Clear the message for the next go-around
-		msg = message{}
-
-		// For testing: just return the params
-		if err = conn.WriteJSON(myMeasurement); err != nil {
-			log.Printf("Error writing to websocket: %s\n", err)
+			// Return measurement and analysis data and clean up
+			if err = conn.WriteJSON(msgOut); err != nil {
+				log.Printf("Error writing to websocket: %s\n", err)
+			}
+			msgOut.Measurement = nil
 		}
 	}
 	log.Println("Closing client")
