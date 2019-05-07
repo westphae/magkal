@@ -7,7 +7,8 @@ var width = 400, height=400,
 // 3. Draw an ellipse for n^2==n0^2, both actual and predicted
 // 4. Draw some error ellipses for various theta for 2-sigma in m
 function updateMagXS(ax, ay, el) {
-    var col, mx, my, lx, ly, kx, ky, n0, lLim=-1, rLim=1, tLim=1, bLim=-1, changed;
+    var col, mx, my, lx, ly, kx, ky, n0, lLim=-1, rLim=1, tLim=1, bLim=-1, changed,
+        xbuf, ybuf;
 
     switch (ax+ay) {
         case 3:
@@ -160,9 +161,11 @@ function updateMagXS(ax, ay, el) {
             changed = true;
         }
         if (changed) {
-            x.domain([lLim, rLim]);
+            xbuf = Math.max(0, (tLim-bLim)-(rLim-lLim))/2;
+            ybuf = Math.max(0, (rLim-lLim)-(tLim-bLim))/2;
+            x.domain([lLim-xbuf, rLim+xbuf]);
             xAxis.scale(x);
-            y.domain([bLim, tLim]);
+            y.domain([bLim-ybuf, tLim+ybuf]);
             yAxis.scale(y);
             xAxisLine.attr("transform", "translate(0," + y(0) + ")")
                 .call(xAxis);
