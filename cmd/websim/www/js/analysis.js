@@ -7,8 +7,8 @@ var width = 400, height=400,
 // 3. Draw an ellipse for n^2==n0^2, both actual and predicted
 // 4. Draw some error ellipses for various theta for 2-sigma in m
 function updateMagXS(ax, ay, el) {
-    var col, mx, my, lx, ly, kx, ky, n0, lLim=-1, rLim=1, tLim=1, bLim=-1, changed,
-        xbuf, ybuf;
+    var lLim=-1, rLim=1, tLim=1, bLim=-1,
+        data=[], changed, col, xBuf, yBuf;
 
     switch (ax+ay) {
         case 3:
@@ -98,74 +98,107 @@ function updateMagXS(ax, ay, el) {
         .attr("x2", x(0))
         .attr("y2", y(0));
 
-    return function(data) {
-        mx = data['M'+ax];
-        my = data['M'+ay];
-        lx = data["L"+ax];
-        ly = data["L"+ay];
-        kx = data["K"+ax];
-        ky = data["K"+ay];
-        kActx = data["KAct"+ax];
-        kActy = data["KAct"+ay];
-        lActx = data["LAct"+ax];
-        lActy = data["LAct"+ay];
-        n0 = data["N0"];
+    function mx(d) {
+        return d['M'+ax];
+    }
 
+    function my(d) {
+        return d['M'+ay];
+    }
+
+    function kx(d) {
+        return d['K'+ax];
+    }
+
+    function ky(d) {
+        return d['K'+ay];
+    }
+
+    function lx(d) {
+        return d['L'+ax];
+    }
+
+    function ly(d) {
+        return d['L'+ay];
+    }
+
+    function kActx(d) {
+        return d['KAct'+ax];
+    }
+
+    function kActy(d) {
+        return d['KAct'+ay];
+    }
+
+    function lActx(d) {
+        return d['LAct'+ax];
+    }
+
+    function lActy(d) {
+        return d['LAct'+ay];
+    }
+
+    function n0(d) {
+        return d['N0'];
+    }
+
+    return function(d) {
+        data.push(Object.assign({}, d));
         changed = false;
-        if (mx < lLim) {
-            lLim = mx;
+        if (mx(d) < lLim) {
+            lLim = mx(d);
             changed = true;
         }
-        if ((-n0-lx)/kx < lLim) {
-            lLim = (-n0-lx)/kx;
+        if ((-n0(d)-lx(d))/kx(d) < lLim) {
+            lLim = (-n0(d)-lx(d))/kx(d);
             changed = true;
         }
-        if ((-n0-lActx)/kActx < lLim) {
-            lLim = (-n0-lActx)/kActx;
+        if ((-n0(d)-lActx(d))/kActx(d) < lLim) {
+            lLim = (-n0(d)-lActx(d))/kActx(d);
             changed = true;
         }
-        if (mx > rLim) {
-            rLim = mx;
+        if (mx(d) > rLim) {
+            rLim = mx(d);
             changed = true;
         }
-        if ((n0-lx)/kx > rLim) {
-            rLim = (n0-lx)/kx;
+        if ((n0(d)-lx(d))/kx(d) > rLim) {
+            rLim = (n0(d)-lx(d))/kx(d);
             changed = true;
         }
-        if ((n0-lActx)/kActx > rLim) {
-            rLim = (n0-lActx)/kActx;
+        if ((n0(d)-lActx(d))/kActx(d) > rLim) {
+            rLim = (n0(d)-lActx(d))/kActx(d);
             changed = true;
         }
-        if (my < bLim) {
-            bLim = my;
+        if (my(d) < bLim) {
+            bLim = my(d);
             changed = true;
         }
-        if ((-n0-ly)/ky < bLim) {
-            bLim = (-n0-ly)/ky;
+        if ((-n0(d)-ly(d))/ky(d) < bLim) {
+            bLim = (-n0(d)-ly(d))/ky(d);
             changed = true;
         }
-        if ((-n0-lActy)/kActy < bLim) {
-            bLim = (-n0-lActy)/kActy;
+        if ((-n0(d)-lActy(d))/kActy(d) < bLim) {
+            bLim = (-n0(d)-lActy(d))/kActy(d);
             changed = true;
         }
-        if (my > tLim) {
-            tLim = my;
+        if (my(d) > tLim) {
+            tLim = my(d);
             changed = true;
         }
-        if ((n0-ly)/ky > tLim) {
-            tLim = (n0-ly)/ky;
+        if ((n0(d)-ly(d))/ky(d) > tLim) {
+            tLim = (n0(d)-ly(d))/ky(d);
             changed = true;
         }
-        if ((n0-lActy)/kActy > tLim) {
-            tLim = (n0-lActy)/kActy;
+        if ((n0(d)-lActy(d))/kActy(d) > tLim) {
+            tLim = (n0(d)-lActy(d))/kActy(d);
             changed = true;
         }
         if (changed) {
-            xbuf = Math.max(0, (tLim-bLim)-(rLim-lLim))/2;
-            ybuf = Math.max(0, (rLim-lLim)-(tLim-bLim))/2;
-            x.domain([lLim-xbuf, rLim+xbuf]);
+            xBuf = Math.max(0, (tLim-bLim)-(rLim-lLim))/2;
+            yBuf = Math.max(0, (rLim-lLim)-(tLim-bLim))/2;
+            x.domain([lLim-xBuf, rLim+xBuf]);
             xAxis.scale(x);
-            y.domain([bLim-ybuf, tLim+ybuf]);
+            y.domain([bLim-yBuf, tLim+yBuf]);
             yAxis.scale(y);
             xAxisLine.attr("transform", "translate(0," + y(0) + ")")
                 .call(xAxis);
@@ -173,35 +206,39 @@ function updateMagXS(ax, ay, el) {
                 .call(yAxis);
         }
 
-        dots.append("circle")
+        var dd = dots.selectAll('circle').data(data);
+
+        dd
+            .enter().append("circle")
             .attr("class", "dot")
             .attr("r", 1)
-            .attr("cx", x(mx))
-            .attr("cy", y(my))
-            .style("fill", col);
+            .style("fill", col)
+            .merge(dd)
+            .attr("cx", function(d) { return x(mx(d)); })
+            .attr("cy", function(d) { return y(my(d)); });
 
-        ctr.attr("cx", x(-lx/kx))
-            .attr("cy", y(-ly/ky));
+        dd.exit().remove();
 
-        ctrAct.attr("cx", x(-lActx/kActx))
-            .attr("cy", y(-lActy/kActy));
+        ctr.attr("cx", x(-lx(d)/kx(d)))
+            .attr("cy", y(-ly(d)/ky(d)));
 
-        crc.attr("cx", x(-lx/kx))
-            .attr("cy", y(-ly/ky))
-            .attr("rx", (x((n0-lx)/kx) - x((-n0-lx)/kx))/2)
-            .attr("ry", (y((-n0-ly)/ky) - y((n0-ly)/ky))/2);
+        ctrAct.attr("cx", x(-lActx(d)/kActx(d)))
+            .attr("cy", y(-lActy(d)/kActy(d)));
 
-        crcAct.attr("cx", x(-lActx/kActx))
-            .attr("cy", y(-lActy/kActy))
-            .attr("rx", (x((n0-lActx)/kActx) - x((-n0-lActx)/kActx))/2)
-            .attr("ry", (y((-n0-lActy)/kActy) - y((n0-lActy)/kActy))/2);
+        crc.attr("cx", x(-lx(d)/kx(d)))
+            .attr("cy", y(-ly(d)/ky(d)))
+            .attr("rx", (x((n0(d)-lx(d))/kx(d)) - x((-n0(d)-lx(d))/kx(d)))/2)
+            .attr("ry", (y((-n0(d)-ly(d))/ky(d)) - y((n0(d)-ly(d))/ky(d)))/2);
+
+        crcAct.attr("cx", x(-lActx(d)/kActx(d)))
+            .attr("cy", y(-lActy(d)/kActy(d)))
+            .attr("rx", (x((n0(d)-lActx(d))/kActx(d)) - x((-n0(d)-lActx(d))/kActx(d)))/2)
+            .attr("ry", (y((-n0(d)-lActy(d))/kActy(d)) - y((n0(d)-lActy(d))/kActy(d)))/2);
 
         vec
-            .attr("x1", x(lx))
-            .attr("y1", y(ly))
-            .attr("x2", x(mx))
-            .attr("y2", y(my))
+            .attr("x1", x(lx(d)))
+            .attr("y1", y(ly(d)))
+            .attr("x2", x(mx(d)))
+            .attr("y2", y(my(d)))
     }
-
 }
-
