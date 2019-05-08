@@ -8,7 +8,7 @@ var width = 400, height=400,
 // 4. Draw some error ellipses for various theta for 2-sigma in m
 function updateMagXS(ax, ay, el) {
     var lLim=-1, rLim=1, tLim=1, bLim=-1,
-        data=[], changed, col, xBuf, yBuf;
+        datum, data=[], changed, col, xBuf, yBuf;
 
     switch (ax+ay) {
         case 3:
@@ -98,99 +98,64 @@ function updateMagXS(ax, ay, el) {
         .attr("x2", x(0))
         .attr("y2", y(0));
 
-    function mx(d) {
-        return d['M'+ax];
-    }
+    return function(datum) {
+        d = {
+            'mx': datum['M'+ax], 'my': datum['M'+ay],
+            'kx': datum['K'+ax], 'ky': datum['K'+ay],
+            'lx': datum['L'+ax], 'ly': datum['L'+ay],
+            'kActx': datum['KAct'+ax], 'kActy': datum['KAct'+ay],
+            'lActx': datum['LAct'+ax], 'lActy': datum['LAct'+ay],
+            'n0': datum['N0']
+        };
+        data.push(d);
 
-    function my(d) {
-        return d['M'+ay];
-    }
-
-    function kx(d) {
-        return d['K'+ax];
-    }
-
-    function ky(d) {
-        return d['K'+ay];
-    }
-
-    function lx(d) {
-        return d['L'+ax];
-    }
-
-    function ly(d) {
-        return d['L'+ay];
-    }
-
-    function kActx(d) {
-        return d['KAct'+ax];
-    }
-
-    function kActy(d) {
-        return d['KAct'+ay];
-    }
-
-    function lActx(d) {
-        return d['LAct'+ax];
-    }
-
-    function lActy(d) {
-        return d['LAct'+ay];
-    }
-
-    function n0(d) {
-        return d['N0'];
-    }
-
-    return function(d) {
-        data.push(Object.assign({}, d));
         changed = false;
-        if (mx(d) < lLim) {
-            lLim = mx(d);
+        if (d['mx'] < lLim) {
+            lLim = d['mx'];
             changed = true;
         }
-        if ((-n0(d)-lx(d))/kx(d) < lLim) {
-            lLim = (-n0(d)-lx(d))/kx(d);
+        if ((-d['n0']-d['lx'])/d['kx'] < lLim) {
+            lLim = (-d['n0']-d['lx'])/d['kx'];
             changed = true;
         }
-        if ((-n0(d)-lActx(d))/kActx(d) < lLim) {
-            lLim = (-n0(d)-lActx(d))/kActx(d);
+        if ((-d['n0']-d['lActx'])/d['kActx'] < lLim) {
+            lLim = (-d['n0']-d['lActx'])/d['kActx'];
             changed = true;
         }
-        if (mx(d) > rLim) {
-            rLim = mx(d);
+        if (d['mx'] > rLim) {
+            rLim = d['mx'];
             changed = true;
         }
-        if ((n0(d)-lx(d))/kx(d) > rLim) {
-            rLim = (n0(d)-lx(d))/kx(d);
+        if ((d['n0']-d['lx'])/d['kx'] > rLim) {
+            rLim = (d['n0']-d['lx'])/d['kx'];
             changed = true;
         }
-        if ((n0(d)-lActx(d))/kActx(d) > rLim) {
-            rLim = (n0(d)-lActx(d))/kActx(d);
+        if ((d['n0']-d['lActx'])/d['kActx'] > rLim) {
+            rLim = (d['n0']-d['lActx'])/d['kActx'];
             changed = true;
         }
-        if (my(d) < bLim) {
-            bLim = my(d);
+        if (d['my'] < bLim) {
+            bLim = d['my'];
             changed = true;
         }
-        if ((-n0(d)-ly(d))/ky(d) < bLim) {
-            bLim = (-n0(d)-ly(d))/ky(d);
+        if ((-d['n0']-d['ly'])/d['ky'] < bLim) {
+            bLim = (-d['n0']-d['ly'])/d['ky'];
             changed = true;
         }
-        if ((-n0(d)-lActy(d))/kActy(d) < bLim) {
-            bLim = (-n0(d)-lActy(d))/kActy(d);
+        if ((-d['n0']-d['lActy'])/d['kActy'] < bLim) {
+            bLim = (-d['n0']-d['lActy'])/d['kActy'];
             changed = true;
         }
-        if (my(d) > tLim) {
-            tLim = my(d);
+        if (d['my'] > tLim) {
+            tLim = d['my'];
             changed = true;
         }
-        if ((n0(d)-ly(d))/ky(d) > tLim) {
-            tLim = (n0(d)-ly(d))/ky(d);
+        if ((d['n0']-d['ly'])/d['ky'] > tLim) {
+            tLim = (d['n0']-d['ly'])/d['ky'];
             changed = true;
         }
-        if ((n0(d)-lActy(d))/kActy(d) > tLim) {
-            tLim = (n0(d)-lActy(d))/kActy(d);
+        if ((d['n0']-d['lActy'])/d['kActy'] > tLim) {
+            tLim = (d['n0']-d['lActy'])/d['kActy'];
             changed = true;
         }
         if (changed) {
@@ -214,31 +179,31 @@ function updateMagXS(ax, ay, el) {
             .attr("r", 1)
             .style("fill", col)
             .merge(dd)
-            .attr("cx", function(d) { return x(mx(d)); })
-            .attr("cy", function(d) { return y(my(d)); });
+            .attr("cx", function(d) { return x(d['mx']); })
+            .attr("cy", function(d) { return y(d['my']); });
 
         dd.exit().remove();
 
-        ctr.attr("cx", x(-lx(d)/kx(d)))
-            .attr("cy", y(-ly(d)/ky(d)));
+        ctr.attr("cx", x(-d['lx']/d['kx']))
+            .attr("cy", y(-d['ly']/d['ky']));
 
-        ctrAct.attr("cx", x(-lActx(d)/kActx(d)))
-            .attr("cy", y(-lActy(d)/kActy(d)));
+        ctrAct.attr("cx", x(-d['lActx']/d['kActx']))
+            .attr("cy", y(-d['lActy']/d['kActy']));
 
-        crc.attr("cx", x(-lx(d)/kx(d)))
-            .attr("cy", y(-ly(d)/ky(d)))
-            .attr("rx", (x((n0(d)-lx(d))/kx(d)) - x((-n0(d)-lx(d))/kx(d)))/2)
-            .attr("ry", (y((-n0(d)-ly(d))/ky(d)) - y((n0(d)-ly(d))/ky(d)))/2);
+        crc.attr("cx", x(-d['lx']/d['kx']))
+            .attr("cy", y(-d['ly']/d['ky']))
+            .attr("rx", (x((d['n0']-d['lx'])/d['kx']) - x((-d['n0']-d['lx'])/d['kx']))/2)
+            .attr("ry", (y((-d['n0']-d['ly'])/d['ky']) - y((d['n0']-d['ly'])/d['ky']))/2);
 
-        crcAct.attr("cx", x(-lActx(d)/kActx(d)))
-            .attr("cy", y(-lActy(d)/kActy(d)))
-            .attr("rx", (x((n0(d)-lActx(d))/kActx(d)) - x((-n0(d)-lActx(d))/kActx(d)))/2)
-            .attr("ry", (y((-n0(d)-lActy(d))/kActy(d)) - y((n0(d)-lActy(d))/kActy(d)))/2);
+        crcAct.attr("cx", x(-d['lActx']/d['kActx']))
+            .attr("cy", y(-d['lActy']/d['kActy']))
+            .attr("rx", (x((d['n0']-d['lActx'])/d['kActx']) - x((-d['n0']-d['lActx'])/d['kActx']))/2)
+            .attr("ry", (y((-d['n0']-d['lActy'])/d['kActy']) - y((d['n0']-d['lActy'])/d['kActy']))/2);
 
         vec
-            .attr("x1", x(lx(d)))
-            .attr("y1", y(ly(d)))
-            .attr("x2", x(mx(d)))
-            .attr("y2", y(my(d)))
+            .attr("x1", x(d['lx']))
+            .attr("y1", y(d['ly']))
+            .attr("x2", x(d['mx']))
+            .attr("y2", y(d['my']))
     }
 }
