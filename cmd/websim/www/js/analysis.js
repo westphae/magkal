@@ -8,7 +8,7 @@ var width = 400, height=400,
 // 4. Draw some error ellipses for various theta for 2-sigma in m
 function updateMagXS(ax, ay, el) {
     var lLim=-1, rLim=1, tLim=1, bLim=-1,
-        datum, data=[], changed, col, xBuf, yBuf;
+        data=[], col, xBuf, yBuf;
 
     switch (ax+ay) {
         case 3:
@@ -99,17 +99,19 @@ function updateMagXS(ax, ay, el) {
         .attr("y2", y(0));
 
     return function(datum) {
-        d = {
+        var d = {
             'mx': datum['M'+ax], 'my': datum['M'+ay],
             'kx': datum['K'+ax], 'ky': datum['K'+ay],
             'lx': datum['L'+ax], 'ly': datum['L'+ay],
             'kActx': datum['KAct'+ax], 'kActy': datum['KAct'+ay],
             'lActx': datum['LAct'+ax], 'lActy': datum['LAct'+ay],
-            'n0': datum['N0']
+            'n0': datum['N0'], 'nSigma': datum['NSigma'], 'epsilon': datum['Epsilon']
         };
         data.push(d);
 
-        changed = false;
+        var ddots = dots.selectAll('circle').data(data);
+
+        var changed = false;
         if (d['mx'] < lLim) {
             lLim = d['mx'];
             changed = true;
@@ -158,6 +160,7 @@ function updateMagXS(ax, ay, el) {
             tLim = (d['n0']-d['lActy'])/d['kActy'];
             changed = true;
         }
+
         if (changed) {
             xBuf = Math.max(0, (tLim-bLim)-(rLim-lLim))/2;
             yBuf = Math.max(0, (rLim-lLim)-(tLim-bLim))/2;
@@ -169,20 +172,18 @@ function updateMagXS(ax, ay, el) {
                 .call(xAxis);
             yAxisLine.attr("transform", "translate(" + x(0) + ",0)")
                 .call(yAxis);
+            ddots.attr("cx", function(d) { return x(d['mx']); })
+                .attr("cy", function(d) { return y(d['my']); });
         }
 
-        var dd = dots.selectAll('circle').data(data);
-
-        dd
-            .enter().append("circle")
+        ddots.enter().append("circle")
             .attr("class", "dot")
-            .attr("r", 1)
+            .attr("r", x(d['n0']*(1+d['nSigma']))-x(d['n0']*(1-d['nSigma'])))
             .style("fill", col)
-            .merge(dd)
             .attr("cx", function(d) { return x(d['mx']); })
             .attr("cy", function(d) { return y(d['my']); });
 
-        dd.exit().remove();
+        ddots.exit().remove();
 
         ctr.attr("cx", x(-d['lx']/d['kx']))
             .attr("cy", y(-d['ly']/d['ky']));

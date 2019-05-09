@@ -119,6 +119,7 @@ vm = new Vue({
             // Handle received params
             if (msg.hasOwnProperty('params') && msg.params!==null) {
                 params = msg['params'];
+                params.source = parseInt(params.source);
                 this.params = params;
                 this.source = params.source;
                 this.n = params.n;
@@ -138,6 +139,8 @@ vm = new Vue({
                 this.data['LAct2'] = this.lAct[1];
                 this.data['LAct3'] = this.lAct[2];
                 this.data['N0'] = this.n0;
+                this.data['NSigma'] = this.nSigma;
+                this.data['Epsilon'] = this.epsilon;
 
                 this.msgContent += '<div class="chip">' +
                     JSON.stringify(msg.params) +
