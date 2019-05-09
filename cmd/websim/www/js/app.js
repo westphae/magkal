@@ -89,7 +89,7 @@ vm = new Vue({
             console.log(msg);
         },
         measureOnce: function () {
-            var msg = {"measure": {"m0": null}};
+            var msg = {"measure": {"m0": null}, "estimate": {"nn": self.n0*self.n0}};
             this.ws.send(
                 JSON.stringify(msg)
             );
@@ -98,7 +98,7 @@ vm = new Vue({
         },
         measureMany: function () {
             measureInterval = setInterval(function () {
-                var msg = {"measure": {"m0": null}};
+                var msg = {"measure": {"m0": null}, "estimate": {"nn": self.n0*self.n0}};
                 self.ws.send(
                     JSON.stringify(msg)
                 );
@@ -164,6 +164,34 @@ vm = new Vue({
                 }
                 if (this.n===3) {
                     this.data['M3'] = msg.measurement[2];
+                }
+            }
+
+            // Handle received state
+            if (msg.hasOwnProperty('state') && msg.state!==null) {
+                this.msgContent += '<div class="chip">' +
+                    JSON.stringify(msg.state) +
+                    '</div>' +
+                    '<br/>';
+
+                this.data['K1'] = msg.state.k[0];
+                this.data['L1'] = msg.state.l[0];
+                this.data['P11'] = msg.state.p[0][0];
+                if (this.n>=2) {
+                    this.data['K2'] = msg.state.k[1];
+                    this.data['L2'] = msg.state.l[1];
+                    this.data['P12'] = msg.state.p[0][1];
+                    this.data['P21'] = msg.state.p[1][0];
+                    this.data['P22'] = msg.state.p[1][1];
+                }
+                if (this.n===3) {
+                    this.data['K3'] = msg.state.k[2];
+                    this.data['L3'] = msg.state.l[2];
+                    this.data['P13'] = msg.state.p[0][2];
+                    this.data['P23'] = msg.state.p[1][2];
+                    this.data['P31'] = msg.state.p[2][0];
+                    this.data['P32'] = msg.state.p[2][1];
+                    this.data['P33'] = msg.state.p[2][2];
                 }
             }
 

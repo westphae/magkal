@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/westphae/magkal/kalman"
 )
 
 type source int // Source is where the measurements come from
@@ -29,23 +30,35 @@ type params struct {
 
 // Some sensible default parameters to start the user off
 var defaultParams = params{
-	random,1,1.0,
+	random,2,1.0,
 	&[]float64{0.8, 0.7, 0.9}, &[]float64{0.1, 0.15, -0.1},
-	0.1, 0.01,
+	0.04, 0.01,
 }
 
 type measureCmd struct {
 	M0 measurement `json:"m0"` // Raw measurement (for manual), pre-noise
 }
 
+type estimateCmd struct {
+	NN float64 `json:"nn"` // The actual measurement of N^2
+}
+
 type messageIn struct {
-	Params  *params     `json:"params"`  // if the messageIn contains new params
-	Measure *measureCmd `json:"measure"` // if the messageIn contains a measurement command
+	Params   *params      `json:"params"`   // if the messageIn contains new params
+	Measure  *measureCmd  `json:"measure"`  // if the messageIn contains a measurement command
+	Estimate *estimateCmd `json:"estimate"` // if the messageIn contains an estimate command
+}
+
+type state struct {
+	K *[]float64 `json:"k"`   // Current estimate of K
+	L *[]float64 `json:"l"`   // Current estimate of L
+	P *[][]float64 `json:"p"` // Current estimate of P, uncertainty matrix of state
 }
 
 type messageOut struct {
 	Params      *params      `json:"params"`      // The params the server is using
 	Measurement *measurement `json:"measurement"` // A raw measurement from the magnetometer source
+	State       *state       `json:"state"`       // Current state of the system
 }
 
 var upgrader = websocket.Upgrader{
@@ -124,6 +137,7 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		cmd           measureCmd
 		myMeasurer    measurer
 		myMeasurement measurement
+		myEstimator   *kalman.Filter
 	)
 	p = defaultParams
 
@@ -150,13 +164,8 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 			myMeasurer = nil
 			log.Print(p)
 			msgIn.Params = nil
-
-			// Return new params and clean up
 			msgOut.Params = &p
-			if err = conn.WriteJSON(msgOut); err != nil {
-				log.Printf("Error writing to websocket: %s\n", err)
-			}
-			msgOut.Params = nil
+			log.Printf("Sending params %v\n", p)
 		}
 
 		// Return any requested measurements
@@ -182,13 +191,36 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 			myMeasurement = myMeasurer(cmd.M0)
 			msgOut.Measurement = &myMeasurement
 			log.Printf("Sending measurement %v\n", myMeasurement)
-
-			// Return measurement and analysis data and clean up
-			if err = conn.WriteJSON(msgOut); err != nil {
-				log.Printf("Error writing to websocket: %s\n", err)
-			}
-			msgOut.Measurement = nil
 		}
+
+		// Perform any state estimations with the Kalman Filter
+		if msgIn.Estimate != nil {
+			if myEstimator == nil {
+				myEstimator = kalman.NewKalmanFilter(p.N, p.N0, p.NSigma, p.Epsilon)
+			}
+			nn := msgIn.Estimate.NN
+			msgIn.Estimate = nil
+			log.Printf("Estimating: %3.1f\n", nn)
+
+			msgOut.State = &state{
+				K: &[]float64{0.987, 0.765, 0.543},
+				L: &[]float64{0.123, 0.234, -0.345},
+				P: &[][]float64{
+					{0.9, 0.1, -0.2},
+					{0.1, 0.7, 0.4},
+					{-0.2, 0.4, 0.8},
+				},
+			}
+			log.Printf("Sending state %v\n", msgOut.State)
+		}
+
+		// Return message and clean up
+		if err = conn.WriteJSON(msgOut); err != nil {
+			log.Printf("Error writing to websocket: %s\n", err)
+		}
+		msgOut.Params = nil
+		msgOut.Measurement = nil
+		msgOut.State = nil
 	}
 	log.Println("Closing client")
 }
