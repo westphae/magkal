@@ -6,10 +6,10 @@ type Filter struct {
 	p [][]float64      // Kalman Filter hidden state covariance
 	q [][]float64      // Kalman Filter state noise process
 	r [][]float64      // Measurement noise
-	u [][]float64      // Control vector, measured mag vector in this case
-	z [][]float64      // Measurement, earth's mag field strength **2
-	U chan [][]float64 // Channel for sending new control values to Kalman Filter
-	Z chan [][]float64 // Channel for sending new measurements to Kalman Filter
+	u []float64      // Control vector, measured mag vector in this case
+	z float64      // Measurement, earth's mag field strength **2
+	U chan []float64 // Channel for sending new control values to Kalman Filter
+	Z chan float64 // Channel for sending new measurements to Kalman Filter
 }
 
 /* NewKalmanFilter returns a Filter struct with Kalman Filter methods for calibrating a magnetometer.
@@ -43,8 +43,8 @@ func NewKalmanFilter(n int, n0 float64, nSigma float64, epsilon float64) (k *Fil
 
 	k.r = [][]float64{{n0*n0*epsilon*epsilon}}
 
-	k.U = make(chan [][]float64)
-	k.Z = make(chan [][]float64)
+	k.U = make(chan []float64)
+	k.Z = make(chan float64)
 
 	go k.runFilter()
 
@@ -81,14 +81,14 @@ func (k *Filter) runFilter() {
 			}
 		case k.z = <-k.Z:
 			// Calculate measurement residual
-			y = k.z[0][0]
+			y = k.z
 			for i:=0; i<k.n; i++ {
 				y -= nHat[i][0]*nHat[i][0]
 			}
 
 			// Calculate Jacobian
 			for i:=0; i<k.n; i++ {
-				h[0][2*i] = 2*nHat[i][0]*k.u[i][0]
+				h[0][2*i] = 2*nHat[i][0]*k.u[i]
 				h[0][2*i+1] = 2 * nHat[i][0]
 			}
 
@@ -107,10 +107,10 @@ func (k *Filter) runFilter() {
 	}
 }
 
-func calcMagField(x, u [][]float64) (n [][]float64) {
+func calcMagField(x [][]float64, u []float64) (n [][]float64) {
 	n = make([][]float64, len(u))
 	for i:=0; i<len(u); i++ {
-		n[i] = []float64{x[2*i][0]*u[i][0] + x[2*i+1][0]}
+		n[i] = []float64{x[2*i][0]*u[i] + x[2*i+1][0]}
 	}
 	return n
 }
@@ -129,4 +129,24 @@ func (k *Filter) ProcessNoise() (cov [][]float64) {
 
 func (k *Filter) SetProcessNoise(q [][]float64) {
 	k.q = q
+}
+
+func (k *Filter) K() (kk *[]float64) {
+	v := make([]float64, k.n)
+	for i:=0; i<k.n; i++ {
+		v[i] = k.x[2*i][0]
+	}
+	return &v
+}
+
+func (k *Filter) L() (l *[]float64) {
+	v := make([]float64, k.n)
+	for i:=0; i<k.n; i++ {
+		v[i] = k.x[2*i+1][0]
+	}
+	return &v
+}
+
+func (k *Filter) P() (p *[][]float64) {
+	return &k.p
 }

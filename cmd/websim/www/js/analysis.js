@@ -202,8 +202,8 @@ function updateMagXS(ax, ay, el) {
             .attr("ry", (y((-d['n0']-d['lActy'])/d['kActy']) - y((d['n0']-d['lActy'])/d['kActy']))/2);
 
         vec
-            .attr("x1", x(d['lx']))
-            .attr("y1", y(d['ly']))
+            .attr("x1", x(-d['lx']/d['kx']))
+            .attr("y1", y(-d['ly']/d['ky']))
             .attr("x2", x(d['mx']))
             .attr("y2", y(d['my']))
     }

@@ -202,14 +202,12 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 			msgIn.Estimate = nil
 			log.Printf("Estimating: %3.1f\n", nn)
 
+			myEstimator.U <- myMeasurement
+			myEstimator.Z <- nn
 			msgOut.State = &state{
-				K: &[]float64{0.987, 0.765, 0.543},
-				L: &[]float64{0.123, 0.234, -0.345},
-				P: &[][]float64{
-					{0.9, 0.1, -0.2},
-					{0.1, 0.7, 0.4},
-					{-0.2, 0.4, 0.8},
-				},
+				K: myEstimator.K(),
+				L: myEstimator.L(),
+				P: myEstimator.P(),
 			}
 			log.Printf("Sending state %v\n", msgOut.State)
 		}
