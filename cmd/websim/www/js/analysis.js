@@ -5,9 +5,9 @@ var width = 400, height=400,
 // 1. Draw a dot for mx,my
 // 2. Draw a small circle for lx,ly, both actual and predicted
 // 3. Draw an ellipse for n^2==n0^2, both actual and predicted
-// 4. Draw some error ellipses for various theta for 2-sigma in m
-function updateMagXS(ax, ay, el) {
-    var lLim=-1, rLim=1, tLim=1, bLim=-1,
+function makeMagXSPlot(ax, ay, el) {
+    var llLim=1e9, rrLim=-1e9, ttLim=-1e9, bbLim=1e9,
+        lLim, rLim, tLim, bLim,
         data=[], col, xBuf, yBuf;
 
     switch (ax+ay) {
@@ -22,11 +22,11 @@ function updateMagXS(ax, ay, el) {
     }
 
     var x = d3.scaleLinear()
-        .domain([lLim, rLim])
+        .domain([llLim, rrLim])
         .range([0, width-margin.left-margin.right]);
 
     var y = d3.scaleLinear()
-        .domain([bLim, tLim])
+        .domain([bbLim, ttLim])
         .range([height-margin.top-margin.bottom, 0]);
 
     var xAxis = d3.axisBottom()
@@ -65,27 +65,27 @@ function updateMagXS(ax, ay, el) {
 
     var dots = svg.append("g");
 
-    var ctr = svg.append("circle")
-        .attr("class", "center estimated")
-        .attr("r", 2)
-        .attr("cx", x(0))
-        .attr("cy", y(0));
-
     var ctrAct = svg.append("circle")
         .attr("class", "center actual")
         .attr("r", 2)
         .attr("cx", x(0))
         .attr("cy", y(0));
 
-    var crc = svg.append("ellipse")
-        .attr("class", "ellipse estimated")
+    var ctr = svg.append("circle")
+        .attr("class", "center estimated")
+        .attr("r", 2)
+        .attr("cx", x(0))
+        .attr("cy", y(0));
+
+    var crcAct = svg.append("ellipse")
+        .attr("class", "ellipse actual")
         .attr("cx", x(0))
         .attr("cy", y(0))
         .attr("rx", 0)
         .attr("ry", 0);
 
-    var crcAct = svg.append("ellipse")
-        .attr("class", "ellipse actual")
+    var crc = svg.append("ellipse")
+        .attr("class", "ellipse estimated")
         .attr("cx", x(0))
         .attr("cy", y(0))
         .attr("rx", 0)
@@ -112,10 +112,11 @@ function updateMagXS(ax, ay, el) {
         var ddots = dots.selectAll('circle').data(data);
 
         var changed = false;
-        if (d['mx'] < lLim) {
-            lLim = d['mx'];
+        if (d['mx']-d['n0']*d['nSigma'] < llLim) {
+            llLim = d['mx']-d['n0']*d['nSigma'];
             changed = true;
         }
+        lLim = llLim;
         if ((-d['n0']-d['lx'])/d['kx'] < lLim) {
             lLim = (-d['n0']-d['lx'])/d['kx'];
             changed = true;
@@ -124,10 +125,11 @@ function updateMagXS(ax, ay, el) {
             lLim = (-d['n0']-d['lActx'])/d['kActx'];
             changed = true;
         }
-        if (d['mx'] > rLim) {
-            rLim = d['mx'];
+        if (d['mx']+d['n0']*d['nSigma'] > rrLim) {
+            rrLim = d['mx']+d['n0']*d['nSigma'];
             changed = true;
         }
+        rLim = rrLim;
         if ((d['n0']-d['lx'])/d['kx'] > rLim) {
             rLim = (d['n0']-d['lx'])/d['kx'];
             changed = true;
@@ -136,10 +138,11 @@ function updateMagXS(ax, ay, el) {
             rLim = (d['n0']-d['lActx'])/d['kActx'];
             changed = true;
         }
-        if (d['my'] < bLim) {
-            bLim = d['my'];
+        if (d['my']-d['n0']*d['nSigma'] < bbLim) {
+            bbLim = d['my']-d['n0']*d['nSigma'];
             changed = true;
         }
+        bLim = bbLim;
         if ((-d['n0']-d['ly'])/d['ky'] < bLim) {
             bLim = (-d['n0']-d['ly'])/d['ky'];
             changed = true;
@@ -148,10 +151,11 @@ function updateMagXS(ax, ay, el) {
             bLim = (-d['n0']-d['lActy'])/d['kActy'];
             changed = true;
         }
-        if (d['my'] > tLim) {
-            tLim = d['my'];
+        if (d['my']+d['n0']*d['nSigma'] > ttLim) {
+            ttLim = d['my']+d['n0']*d['nSigma'];
             changed = true;
         }
+        tLim = ttLim;
         if ((d['n0']-d['ly'])/d['ky'] > tLim) {
             tLim = (d['n0']-d['ly'])/d['ky'];
             changed = true;
@@ -178,7 +182,7 @@ function updateMagXS(ax, ay, el) {
 
         ddots.enter().append("circle")
             .attr("class", "dot")
-            .attr("r", x(d['n0']*(1+d['nSigma']))-x(d['n0']*(1-d['nSigma'])))
+            .attr("r", x(d['n0']*d['nSigma'])-x(-d['n0']*d['nSigma']))
             .style("fill", col)
             .attr("cx", function(d) { return x(d['mx']); })
             .attr("cy", function(d) { return y(d['my']); });

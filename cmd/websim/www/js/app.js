@@ -148,7 +148,7 @@ vm = new Vue({
                     '<br/>';
 
                 d3.select('#m-plot').selectAll('svg').remove();
-                this.mxs_update = updateMagXS(1, 2, "#m-plot");
+                this.mxs_update = makeMagXSPlot(1, 2, "#m-plot");
             }
 
             // Handle received measurement
