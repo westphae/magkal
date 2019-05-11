@@ -150,9 +150,11 @@ vm = new Vue({
                 d3.select('#m-plot').selectAll('svg').remove();
                 this.mxs_update = makeMagXSPlot(1, 2, "#m-plot");
                 this.k1l1_update = makeKLPlot("L1", "K1", "#m-plot");
-                this.k2l2_update = makeKLPlot("L2", "K2", "#m-plot");
-                this.kk_update = makeKLPlot("K1", "K2", "#m-plot");
-                this.ll_update = makeKLPlot("L1", "L2", "#m-plot");
+                if (this.n>1) {
+                    this.k2l2_update = makeKLPlot("L2", "K2", "#m-plot");
+                    this.kk_update = makeKLPlot("K1", "K2", "#m-plot");
+                    this.ll_update = makeKLPlot("L1", "L2", "#m-plot");
+                }
             }
 
             // Handle received measurement
@@ -231,9 +233,11 @@ vm = new Vue({
 
             this.mxs_update(this.data);
             this.k1l1_update(this.data);
-            this.k2l2_update(this.data);
-            this.kk_update(this.data);
-            this.ll_update(this.data);
+            if (this.n>1) {
+                this.k2l2_update(this.data);
+                this.kk_update(this.data);
+                this.ll_update(this.data);
+            }
         }
     }
 });

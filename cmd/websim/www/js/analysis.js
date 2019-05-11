@@ -278,31 +278,22 @@ function makeKLPlot(ax, ay, el) {
         .style("text-anchor", "end")
         .text("m"+ay);
 
+    var errEllipse = svg.append("g");
+
+    errEllipse.append("circle")
+        .attr("class", "center estimated")
+        .attr("r", 2);
+
+    var crc = errEllipse.append("ellipse")
+        .attr("class", "ellipse estimated")
+        .attr("rx", 0)
+        .attr("ry", 0);
+
     var ctrAct = svg.append("circle")
         .attr("class", "center actual")
         .attr("r", 2)
         .attr("cx", x(0))
         .attr("cy", y(0));
-
-    var ctr = svg.append("circle")
-        .attr("class", "center estimated")
-        .attr("r", 2)
-        .attr("cx", x(0))
-        .attr("cy", y(0));
-
-    var crcAct = svg.append("ellipse")
-        .attr("class", "ellipse actual")
-        .attr("cx", x(0))
-        .attr("cy", y(0))
-        .attr("rx", 0)
-        .attr("ry", 0);
-
-    var crc = svg.append("ellipse")
-        .attr("class", "ellipse estimated")
-        .attr("cx", x(0))
-        .attr("cy", y(0))
-        .attr("rx", 0)
-        .attr("ry", 0);
 
     return function(datum) {
         var d = {
@@ -310,7 +301,7 @@ function makeKLPlot(ax, ay, el) {
             'Actx': datum[ax[0]+'Act'+ax[1]], 'Acty': datum[ay[0]+'Act'+ay[1]],
             'Pxx': datum['P'+ax+ax], 'Pxy': datum['P'+ax+ay], 'Pyy': datum['P'+ay+ay],
             'n0': datum['N0'], 'nSigma': datum['NSigma'], 'epsilon': datum['Epsilon']
-        }, errEllipse, errEllipseAct;
+        };
 
         var changed = false;
         if (d['x'] < lLim) {
@@ -343,24 +334,16 @@ function makeKLPlot(ax, ay, el) {
                 .call(yAxis);
         }
 
-        errEllipse = calcEllipse(d['Pxx'], d['Pyy'], d['Pxy']);
+        var errEllipseData = calcEllipse(d['Pxx'], d['Pyy'], d['Pxy']);
 
-        ctr.attr("cx", x(d['x']))
-            .attr("cy", y(d['y']));
+        errEllipse.attr("transform", "translate(" + x(d['x']) + "," + y(d['y']) + ")");
+
+        crc.attr("rx", x(errEllipseData['a'])-x(-errEllipseData['a']))
+            .attr("ry", x(errEllipseData['b'])-x(-errEllipseData['b']))
+            .attr("transform", "rotate("+errEllipseData['alpha']+")");
 
         ctrAct.attr("cx", x(d['Actx']))
             .attr("cy", y(d['Acty']));
-
-        crc.attr("cx", x(d['x']))
-            .attr("cy", y(d['y']))
-            .attr("rx", x(errEllipse['a'])-x(-errEllipse['a']))
-            .attr("ry", x(errEllipse['b'])-x(-errEllipse['b']))
-            .attr("transform", "rotate("+errEllipse['alpha']+")");
-
-        // crcAct.attr("cx", x(-d['lActx']/d['kActx']))
-        //     .attr("cy", y(-d['lActy']/d['kActy']))
-        //     .attr("rx", (x((d['n0']-d['lActx'])/d['kActx']) - x((-d['n0']-d['lActx'])/d['kActx']))/2)
-        //     .attr("ry", (y((-d['n0']-d['lActy'])/d['kActy']) - y((d['n0']-d['lActy'])/d['kActy']))/2);
     }
 }
 
@@ -387,9 +370,6 @@ function calcEllipse(pKK, pLL, pKL) {
     var alpha = Math.atan2(2*rho*sK*sL, pKK-pLL)/2;
     var num = 2*pKK*pLL*(1-rho*rho);
     var den = 2*pKL/Math.sin(2*alpha);
-    if ((pKK+pLL)*(pKK+pLL) < den*den) {
-        debugger;
-    }
     var a = Math.sqrt(num/(pKK+den+pLL));
     var b = Math.sqrt(num/(pKK-den+pLL));
     return {'a': a, 'b': b, 'alpha': alpha*180/Math.PI}
