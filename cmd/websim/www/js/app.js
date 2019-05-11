@@ -149,6 +149,10 @@ vm = new Vue({
 
                 d3.select('#m-plot').selectAll('svg').remove();
                 this.mxs_update = makeMagXSPlot(1, 2, "#m-plot");
+                this.k1l1_update = makeKLPlot("L1", "K1", "#m-plot");
+                this.k2l2_update = makeKLPlot("L2", "K2", "#m-plot");
+                this.kk_update = makeKLPlot("K1", "K2", "#m-plot");
+                this.ll_update = makeKLPlot("L1", "L2", "#m-plot");
             }
 
             // Handle received measurement
@@ -176,22 +180,49 @@ vm = new Vue({
 
                 this.data['K1'] = msg.state.k[0];
                 this.data['L1'] = msg.state.l[0];
-                this.data['P11'] = msg.state.p[0][0];
+                this.data['PK1K1'] = msg.state.p[0][0];
+                this.data['PK1L1'] = msg.state.p[0][1];
+                this.data['PL1K1'] = msg.state.p[1][0];
+                this.data['PL1L1'] = msg.state.p[1][1];
                 if (this.n>=2) {
                     this.data['K2'] = msg.state.k[1];
                     this.data['L2'] = msg.state.l[1];
-                    this.data['P12'] = msg.state.p[0][1];
-                    this.data['P21'] = msg.state.p[1][0];
-                    this.data['P22'] = msg.state.p[1][1];
+                    this.data['PK1K2'] = msg.state.p[0][2];
+                    this.data['PK1L2'] = msg.state.p[0][3];
+                    this.data['PL1K2'] = msg.state.p[1][2];
+                    this.data['PL1L2'] = msg.state.p[1][3];
+                    this.data['PK2K1'] = msg.state.p[2][0];
+                    this.data['PK2L1'] = msg.state.p[2][1];
+                    this.data['PK2K2'] = msg.state.p[2][2];
+                    this.data['PK2L2'] = msg.state.p[2][3];
+                    this.data['PL2K1'] = msg.state.p[3][0];
+                    this.data['PL2L1'] = msg.state.p[3][1];
+                    this.data['PL2K2'] = msg.state.p[3][2];
+                    this.data['PL2L2'] = msg.state.p[3][3];
                 }
                 if (this.n===3) {
                     this.data['K3'] = msg.state.k[2];
                     this.data['L3'] = msg.state.l[2];
-                    this.data['P13'] = msg.state.p[0][2];
-                    this.data['P23'] = msg.state.p[1][2];
-                    this.data['P31'] = msg.state.p[2][0];
-                    this.data['P32'] = msg.state.p[2][1];
-                    this.data['P33'] = msg.state.p[2][2];
+                    this.data['PK1K3'] = msg.state.p[0][4];
+                    this.data['PK1L3'] = msg.state.p[0][5];
+                    this.data['PL1K3'] = msg.state.p[1][4];
+                    this.data['PL1L3'] = msg.state.p[1][5];
+                    this.data['PK2K3'] = msg.state.p[2][4];
+                    this.data['PK2L3'] = msg.state.p[2][5];
+                    this.data['PL2K3'] = msg.state.p[3][4];
+                    this.data['PL2L3'] = msg.state.p[3][5];
+                    this.data['PK3K1'] = msg.state.p[4][0];
+                    this.data['PK3L1'] = msg.state.p[4][1];
+                    this.data['PK3K2'] = msg.state.p[4][2];
+                    this.data['PK3L2'] = msg.state.p[4][3];
+                    this.data['PK3K3'] = msg.state.p[4][4];
+                    this.data['PK3L3'] = msg.state.p[4][5];
+                    this.data['PL3K1'] = msg.state.p[5][0];
+                    this.data['PL3L1'] = msg.state.p[5][1];
+                    this.data['PL3K2'] = msg.state.p[5][2];
+                    this.data['PL3L2'] = msg.state.p[5][3];
+                    this.data['PL3K3'] = msg.state.p[5][4];
+                    this.data['PL3L3'] = msg.state.p[5][5];
                 }
             }
 
@@ -199,7 +230,10 @@ vm = new Vue({
             element.scrollTop = element.scrollHeight; // Auto scroll to the bottom
 
             this.mxs_update(this.data);
-            console.log(this.data);
+            this.k1l1_update(this.data);
+            this.k2l2_update(this.data);
+            this.kk_update(this.data);
+            this.ll_update(this.data);
         }
     }
 });
