@@ -15,10 +15,11 @@ type Filter struct {
 /* NewKalmanFilter returns a Filter struct with Kalman Filter methods for calibrating a magnetometer.
    n is the number of dimensions (1, 2 for testing; 3 for reality)
    n0 is the strength of the Earth's magnetic field at the current location, 1.0 is fine for testing
-   nSigma is the initial uncertainty scale for k (nSigma*n0 for l), 0.1 seems about right
-   epsilon is a tiny noise scale, maybe 0.01
+   sigmaK0 is the initial uncertainty for k (n0*sigmaK0 for l)
+   sigmaK is the (small) process uncertainty for k (n0*sigmaK for l)
+   sigmaM is the fractional magnetometer measurement noise, so the magnetometer noise is n0*sigmaM
  */
-func NewKalmanFilter(n int, n0 float64, nSigma float64, epsilon float64) (k *Filter) {
+func NewKalmanFilter(n int, n0, sigmaK0, sigmaK, sigmaM float64) (k *Filter) {
 	k = new(Filter)
 	k.n = n
 
@@ -32,16 +33,16 @@ func NewKalmanFilter(n int, n0 float64, nSigma float64, epsilon float64) (k *Fil
 
 		k.p[2*i] = make([]float64, 2*n)
 		k.p[2*i+1] = make([]float64, 2*n)
-		k.p[2*i][2*i] = nSigma * nSigma
-		k.p[2*i+1][2*i+1] = nSigma * nSigma /(n0*n0)
+		k.p[2*i][2*i] = sigmaK0*sigmaK0
+		k.p[2*i+1][2*i+1] = (n0*sigmaK0)*(n0*sigmaK0)
 
 		k.q[2*i] = make([]float64, 2*n)
 		k.q[2*i+1] = make([]float64, 2*n)
-		k.q[2*i][2*i] = epsilon * epsilon / (86400*0.01)
-		k.q[2*i+1][2*i+1] = epsilon * epsilon /(n0*n0) / (86400*0.01)
+		k.q[2*i][2*i] = sigmaK*sigmaK
+		k.q[2*i+1][2*i+1] = (n0*sigmaK)*(n0*sigmaK)
 	}
 
-	k.r = [][]float64{{n0*n0*epsilon*epsilon}}
+	k.r = [][]float64{{(n0*sigmaM)*(n0*sigmaM)}}
 
 	k.U = make(chan []float64)
 	k.Z = make(chan float64)

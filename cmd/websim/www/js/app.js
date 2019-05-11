@@ -12,8 +12,9 @@ vm = new Vue({
         n0: 1.0,               // Strength of magnetic field
         kAct: [1.0, 1.0, 1.0], // Actual k for manual or random measurement sources
         lAct: [0.0, 0.0, 0.0], // Actual l for manual or random measurement sources
-        nSigma: 0.1,           // Standard deviation of uncertainty of k
-        epsilon: 0.01,         // Small noise scale
+        sigmaK0: 0.25,         // Initial standard deviation of uncertainty of k
+        sigmaK: 0.01,          // Process standard deviation of uncertainty of k
+        sigmaM: 0.05,          // Small noise scale
         msgContent: '',        // A running list of data messages displayed on the screen
         params: params,        // Actual parameters currently being used, will be replaced by above when sent to server
         measuring: false,      // Are we measuring continuously?
@@ -49,11 +50,14 @@ vm = new Vue({
             if (n===3 && this.kAct[2]<=0) { this.kAct[2] = params.kAct[2]; }
         },
         check_lAct: function() { },
-        check_nSigma: function() {
-            if (this.nSigma <= 0) { this.nSigma = params.nSigma; }
+        check_sigmaK0: function() {
+            if (this.sigmaK0 <= 0) { this.sigmaK0 = params.sigmaK0; }
         },
-        check_epsilon: function() {
-            if (this.epsilon <= 0) { this.epsilon = params.epsilon; }
+        check_sigmaK: function() {
+            if (this.sigmaK <= 0) { this.sigmaK = params.sigmaK; }
+        },
+        check_sigmaM: function() {
+            if (this.sigmaM <= 0) { this.sigmaM = params.sigmaM; }
         },
         check_params_changed: function() {
             return !(
@@ -66,8 +70,9 @@ vm = new Vue({
                 params.lAct[0] === this.lAct[0] &&
                 params.lAct[1] === this.lAct[1] &&
                 params.lAct[2] === this.lAct[2] &&
-                params.nSigma === this.nSigma &&
-                params.epsilon === this.epsilon
+                params.sigmaK0 === this.sigmaK0 &&
+                params.sigmaK === this.sigmaK &&
+                params.sigmaM === this.sigmaM
             )
         },
         restart: function () {
@@ -77,8 +82,9 @@ vm = new Vue({
                 n0: this.n0,
                 kAct: [this.kAct[0], this.kAct[1], this.kAct[2]],
                 lAct: [this.lAct[0], this.lAct[1], this.lAct[2]],
-                nSigma: this.nSigma,
-                epsilon: this.epsilon
+                sigmaK0: this.sigmaK0,
+                sigmaK: this.sigmaK,
+                sigmaM: this.sigmaM
             };
 
             var msg = {"params": params};
@@ -126,8 +132,9 @@ vm = new Vue({
                 this.n0 = params.n0;
                 this.kAct = params.kAct;
                 this.lAct = params.lAct;
-                this.nSigma = params.nSigma;
-                this.epsilon = params.epsilon;
+                this.sigmaK0 = params.sigmaK0;
+                this.sigmaK = params.sigmaK;
+                this.sigmaM = params.sigmaM;
 
                 this.data['M1'] = 0;
                 this.data['M2'] = 0;
@@ -139,8 +146,9 @@ vm = new Vue({
                 this.data['LAct2'] = this.lAct[1];
                 this.data['LAct3'] = this.lAct[2];
                 this.data['N0'] = this.n0;
-                this.data['NSigma'] = this.nSigma;
-                this.data['Epsilon'] = this.epsilon;
+                this.data['sigmaK0'] = this.sigmaK0;
+                this.data['sigmaK'] = this.sigmaK;
+                this.data['sigmaM'] = this.sigmaM;
 
                 this.msgContent += '<div class="chip">' +
                     JSON.stringify(msg.params) +
@@ -228,9 +236,6 @@ vm = new Vue({
                 }
             }
 
-            var element = document.getElementById('messages');
-            element.scrollTop = element.scrollHeight; // Auto scroll to the bottom
-
             this.mxs_update(this.data);
             this.k1l1_update(this.data);
             if (this.n>1) {
@@ -238,6 +243,9 @@ vm = new Vue({
                 this.kk_update(this.data);
                 this.ll_update(this.data);
             }
+
+            var element = document.getElementById('messages');
+            element.scrollTop = element.scrollHeight; // Auto scroll to the bottom
         }
     }
 });

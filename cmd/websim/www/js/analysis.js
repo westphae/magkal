@@ -65,27 +65,27 @@ function makeMagXSPlot(ax, ay, el) {
 
     var dots = svg.append("g");
 
-    var ctrAct = svg.append("circle")
-        .attr("class", "center actual")
-        .attr("r", 2)
-        .attr("cx", x(0))
-        .attr("cy", y(0));
-
     var ctr = svg.append("circle")
         .attr("class", "center estimated")
         .attr("r", 2)
         .attr("cx", x(0))
         .attr("cy", y(0));
 
-    var crcAct = svg.append("ellipse")
-        .attr("class", "ellipse actual")
+    var crc = svg.append("ellipse")
+        .attr("class", "ellipse estimated")
         .attr("cx", x(0))
         .attr("cy", y(0))
         .attr("rx", 0)
         .attr("ry", 0);
 
-    var crc = svg.append("ellipse")
-        .attr("class", "ellipse estimated")
+    var ctrAct = svg.append("circle")
+        .attr("class", "center actual")
+        .attr("r", 2)
+        .attr("cx", x(0))
+        .attr("cy", y(0));
+
+    var crcAct = svg.append("ellipse")
+        .attr("class", "ellipse actual")
         .attr("cx", x(0))
         .attr("cy", y(0))
         .attr("rx", 0)
@@ -105,15 +105,15 @@ function makeMagXSPlot(ax, ay, el) {
             'lx': datum['L'+ax], 'ly': datum['L'+ay],
             'kActx': datum['KAct'+ax], 'kActy': datum['KAct'+ay],
             'lActx': datum['LAct'+ax], 'lActy': datum['LAct'+ay],
-            'n0': datum['N0'], 'nSigma': datum['NSigma'], 'epsilon': datum['Epsilon']
+            'n0': datum['N0'], 'sigmaM': datum['sigmaM']
         };
         data.push(d);
 
         var ddots = dots.selectAll('circle').data(data);
 
         var changed = false;
-        if (d['mx']-d['n0']*d['nSigma'] < llLim) {
-            llLim = d['mx']-d['n0']*d['nSigma'];
+        if (d['mx']-d['n0']*d['sigmaM'] < llLim) {
+            llLim = d['mx']-d['n0']*d['sigmaM'];
             changed = true;
         }
         lLim = llLim;
@@ -125,8 +125,8 @@ function makeMagXSPlot(ax, ay, el) {
             lLim = (-d['n0']-d['lActx'])/d['kActx'];
             changed = true;
         }
-        if (d['mx']+d['n0']*d['nSigma'] > rrLim) {
-            rrLim = d['mx']+d['n0']*d['nSigma'];
+        if (d['mx']+d['n0']*d['sigmaM'] > rrLim) {
+            rrLim = d['mx']+d['n0']*d['sigmaM'];
             changed = true;
         }
         rLim = rrLim;
@@ -138,8 +138,8 @@ function makeMagXSPlot(ax, ay, el) {
             rLim = (d['n0']-d['lActx'])/d['kActx'];
             changed = true;
         }
-        if (d['my']-d['n0']*d['nSigma'] < bbLim) {
-            bbLim = d['my']-d['n0']*d['nSigma'];
+        if (d['my']-d['n0']*d['sigmaM'] < bbLim) {
+            bbLim = d['my']-d['n0']*d['sigmaM'];
             changed = true;
         }
         bLim = bbLim;
@@ -151,8 +151,8 @@ function makeMagXSPlot(ax, ay, el) {
             bLim = (-d['n0']-d['lActy'])/d['kActy'];
             changed = true;
         }
-        if (d['my']+d['n0']*d['nSigma'] > ttLim) {
-            ttLim = d['my']+d['n0']*d['nSigma'];
+        if (d['my']+d['n0']*d['sigmaM'] > ttLim) {
+            ttLim = d['my']+d['n0']*d['sigmaM'];
             changed = true;
         }
         tLim = ttLim;
@@ -182,7 +182,7 @@ function makeMagXSPlot(ax, ay, el) {
 
         ddots.enter().append("circle")
             .attr("class", "dot")
-            .attr("r", x(d['n0']*d['nSigma'])-x(-d['n0']*d['nSigma']))
+            .attr("r", (x(d['n0']*d['sigmaM'])-x(-d['n0']*d['sigmaM']))/2)
             .style("fill", col)
             .attr("cx", function(d) { return x(d['mx']); })
             .attr("cy", function(d) { return y(d['my']); });
@@ -300,7 +300,7 @@ function makeKLPlot(ax, ay, el) {
             'x': datum[ax], 'y': datum[ay],
             'Actx': datum[ax[0]+'Act'+ax[1]], 'Acty': datum[ay[0]+'Act'+ay[1]],
             'Pxx': datum['P'+ax+ax], 'Pxy': datum['P'+ax+ay], 'Pyy': datum['P'+ay+ay],
-            'n0': datum['N0'], 'nSigma': datum['NSigma'], 'epsilon': datum['Epsilon']
+            'n0': datum['N0'], 'sigmaM': datum['sigmaM']
         };
 
         var changed = false;
@@ -338,8 +338,8 @@ function makeKLPlot(ax, ay, el) {
 
         errEllipse.attr("transform", "translate(" + x(d['x']) + "," + y(d['y']) + ")");
 
-        crc.attr("rx", x(errEllipseData['a'])-x(-errEllipseData['a']))
-            .attr("ry", x(errEllipseData['b'])-x(-errEllipseData['b']))
+        crc.attr("rx", (x(errEllipseData['a'])-x(-errEllipseData['a']))/2)
+            .attr("ry", (x(errEllipseData['b'])-x(-errEllipseData['b']))/2)
             .attr("transform", "rotate("+errEllipseData['alpha']+")");
 
         ctrAct.attr("cx", x(d['Actx']))

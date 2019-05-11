@@ -73,12 +73,16 @@
             </div>
             <div class="row">
                 <div class="input-field col s3">
-                    <input type="number" v-model.number="nSigma" @change="check_nSigma()">
-                    <label>k Noise</label>
+                    <input type="number" v-model.number="sigmaK0" @change="check_sigmaK0()">
+                    <label>k Noise (Initial)</label>
                 </div>
                 <div class="input-field col s3">
-                    <input type="number" v-model.number="epsilon" @change="check_epsilon()">
-                    <label>Small noise scale</label>
+                    <input type="number" v-model.number="sigmaK" @change="check_sigmaK()">
+                    <label>k Noise (Process)</label>
+                </div>
+                <div class="input-field col s3">
+                    <input type="number" v-model.number="sigmaM" @change="check_sigmaM()">
+                    <label>Magnetometer noise scale</label>
                 </div>
             </div>
             <div class="row">

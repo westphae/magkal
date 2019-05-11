@@ -19,20 +19,21 @@ const (
 )
 
 type params struct {
-	Source  source    `json:"source"`   // Source of the magnetometer data
+	Source  source     `json:"source"`  // Source of the magnetometer data
 	N       int        `json:"n"`       // Number of dimensions
 	N0      float64    `json:"n0"`      // Value of Earth's magnetic field at location
 	KAct    *[]float64 `json:"kAct"`    // Actual K for manual, random measurement sources
 	LAct    *[]float64 `json:"lAct"`    // Actual L for manual, random measurement sources
-	NSigma  float64    `json:"nSigma"`  // Initial noise scale for k
-	Epsilon float64    `json:"epsilon"` // Noise scale for measurement and process noise
+	SigmaK0 float64    `json:"sigmaK0"` // Initial noise scale for k
+	SigmaK  float64    `json:"sigmaK"`  // Process noise scale for k
+	SigmaM  float64    `json:"sigmaM"`  // Noise scale for measurement
 }
 
 // Some sensible default parameters to start the user off
 var defaultParams = params{
 	random,2,1.0,
 	&[]float64{0.8, 0.7, 0.9}, &[]float64{0.1, 0.15, -0.1},
-	0.04, 0.01,
+	0.25, 0.01, 0.05,
 }
 
 type measureCmd struct {
@@ -133,16 +134,24 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	var (
 		msgIn         messageIn
 		msgOut        messageOut
-		p             params
 		cmd           measureCmd
-		myMeasurer    measurer
 		myMeasurement measurement
-		myEstimator   *kalman.Filter
+		myParams = defaultParams
+		myMeasurer = makeRandomMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
+		myEstimator = kalman.NewKalmanFilter(myParams.N, myParams.N0, myParams.SigmaK0, myParams.SigmaK, myParams.SigmaM)
 	)
-	p = defaultParams
 
 	// Send initial params
-	msgOut = messageOut{&p, nil, nil, nil}
+	msgOut = messageOut{
+		&myParams,
+		nil,
+		&state{
+				K: myEstimator.K(),
+				L: myEstimator.L(),
+				P: myEstimator.P(),
+			},
+			nil,
+	}
 	if err = conn.WriteJSON(msgOut); err != nil {
 		log.Printf("Error writing params to websocket: %s\n", err)
 		return
@@ -159,31 +168,35 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 
 		// Extract any new parameters
 		if msgIn.Params != nil {
-			// Parse and implement new params
-			p = *msgIn.Params
-			myMeasurer = nil
-			log.Print(p)
+			myParams = *msgIn.Params
 			msgIn.Params = nil
-			msgOut.Params = &p
-			log.Printf("Sending params %v\n", p)
+			msgOut.Params = &myParams
+			log.Printf("Received params %v\n", myParams)
+
+			switch myParams.Source {
+			case manual:
+				myMeasurer = makeManualMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
+				log.Println("Set Manual measurer")
+			case random:
+				myMeasurer = makeRandomMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
+				log.Println("Set Random measurer")
+			default:
+				myMeasurer = makeRandomMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
+				log.Printf("Received bad source: %d, setting Random measurer\n", myParams.Source)
+				break
+			}
+
+			myEstimator = kalman.NewKalmanFilter(myParams.N, myParams.N0, myParams.SigmaK0, myParams.SigmaK, myParams.SigmaM)
+			msgOut.State = &state{
+				K: myEstimator.K(),
+				L: myEstimator.L(),
+				P: myEstimator.P(),
+			}
+			log.Printf("Sending params %v and initial state\n", myParams)
 		}
 
 		// Return any requested measurements
 		if msgIn.Measure != nil {
-			if myMeasurer == nil {
-				switch p.Source {
-				case manual:
-					myMeasurer = makeManualMeasurer(p.N, p.N0, *p.KAct, *p.LAct, p.NSigma*p.N0)
-					log.Println("Set Manual measurer")
-				case random:
-					myMeasurer = makeRandomMeasurer(p.N, p.N0, *p.KAct, *p.LAct, p.NSigma*p.N0)
-					log.Println("Set Random measurer")
-				default:
-					myMeasurer = nil
-					log.Printf("Received bad source: %d\n", p.Source)
-					break
-				}
-			}
 			cmd = *msgIn.Measure
 			msgIn.Measure = nil
 			log.Printf("Received raw measurement %v\n", cmd)
@@ -195,9 +208,6 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 
 		// Perform any state estimations with the Kalman Filter
 		if msgIn.Estimate != nil {
-			if myEstimator == nil {
-				myEstimator = kalman.NewKalmanFilter(p.N, p.N0, p.NSigma, p.Epsilon)
-			}
 			nn := msgIn.Estimate.NN
 			msgIn.Estimate = nil
 			log.Printf("Estimating: %3.1f\n", nn)
