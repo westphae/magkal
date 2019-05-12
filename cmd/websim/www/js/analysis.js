@@ -377,14 +377,14 @@ function calcEllipse(pKK, pLL, pKL) {
 
 // Draw dTheta Plot
 function makeDThetaPlot(el) {
-    var tLim=45, bLim=-45, data={};
+    var data={};
 
     var x = d3.scaleLinear()
         .domain([0, 360])
         .range([0, width-margin.left-margin.right]);
 
     var y = d3.scaleLinear()
-        .domain([bLim, tLim])
+        .domain([0, 0])
         .range([height-margin.top-margin.bottom, 0]);
 
     var xAxis = d3.axisBottom()
@@ -421,28 +421,25 @@ function makeDThetaPlot(el) {
         .style("text-anchor", "end")
         .text("Heading Error");
 
-    var thetas = [];
-    for (var theta=0; theta<360; theta++) {
-        thetas.push(theta)
+    var thetas = d3.range(0, 360);
+
+    function dTheta(theta) {
+        var dTheta = Math.atan2(
+            data["ky"]/data["kActy"]*(data["n0"]*Math.sin(theta*Math.PI/180)-data["lActy"])+data["ly"],
+            data["kx"]/data["kActx"]*(data["n0"]*Math.cos(theta*Math.PI/180)-data["lActx"])+data["lx"]
+        )*180/Math.PI-theta;
+        if (dTheta<-180) {
+            dTheta += 360;
+        }
+        if (dTheta>180) {
+            dTheta -= 360;
+        }
+        return dTheta;
     }
 
     var xLine = d3.line()
-        .x(function (theta) {
-            return x(theta);
-        })
-        .y(function (theta) {
-            var dTheta = Math.atan2(
-                data["ky"]/data["kActy"]*(data["n0"]*Math.sin(theta*Math.PI/180)-data["lActy"])+data["ly"],
-                data["kx"]/data["kActx"]*(data["n0"]*Math.cos(theta*Math.PI/180)-data["lActx"])+data["lx"]
-            )*180/Math.PI-theta;
-            if (dTheta<-180) {
-                dTheta += 360;
-            }
-            if (dTheta>180) {
-                dTheta -= 360;
-            }
-            return y(dTheta);
-        });
+        .x(function (theta) { return x(theta); })
+        .y(function(theta) { return y(dTheta(theta)); });
 
     var xPath = svg.append("g")
         .append("path")
@@ -459,7 +456,22 @@ function makeDThetaPlot(el) {
             'n0': datum['N0']
         };
 
+        var rr = thetas.reduce(function(oMax, x) {
+            var y = dTheta(x);
+            if (y<-oMax) {
+                oMax = -y;
+            }
+            if (y>oMax) {
+                oMax = y;
+            }
+            return Math.exp(Math.ceil(Math.log(oMax)));
+        }, 0);
+
+        y.domain([-rr, rr]);
+        yAxis.scale(y);
+        xAxisLine.attr("transform", "translate(0," + y(0) + ")");
+        yAxisLine.call(yAxis);
+
         xPath.attr("d", xLine);
     }
 }
-

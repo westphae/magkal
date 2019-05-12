@@ -167,6 +167,7 @@ vm = new Vue({
                     this.k2l2_update = makeKLPlot("L2", "K2", "#m-plot");
                     this.kk_update = makeKLPlot("K1", "K2", "#m-plot");
                     this.ll_update = makeKLPlot("L1", "L2", "#m-plot");
+                    this.dTheta_update = makeDThetaPlot("#m-plot");
                 }
             }
 
