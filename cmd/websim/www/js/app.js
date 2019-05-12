@@ -155,7 +155,7 @@ vm = new Vue({
                 this.data['sigmaK'] = this.sigmaK;
                 this.data['sigmaM'] = this.sigmaM;
 
-                this.msgContent += '<div class="chip">' +
+                this.msgContent = '<div class="chip">' +
                     JSON.stringify(msg.params) +
                     '</div>' +
                     '<br/>';
@@ -173,7 +173,7 @@ vm = new Vue({
 
             // Handle received measurement
             if (msg.hasOwnProperty('measurement') && msg.measurement!==null) {
-                this.msgContent += '<div class="chip">' +
+                this.msgContent = '<div class="chip">' +
                     JSON.stringify(msg.measurement) +
                     '</div>' +
                     '<br/>';
@@ -189,7 +189,7 @@ vm = new Vue({
 
             // Handle received state
             if (msg.hasOwnProperty('state') && msg.state!==null) {
-                this.msgContent += '<div class="chip">' +
+                this.msgContent = '<div class="chip">' +
                     JSON.stringify(msg.state) +
                     '</div>' +
                     '<br/>';
