@@ -10,8 +10,12 @@ vm = new Vue({
         source: 0,             // Data source selected by the user: manual, random, file, actual
         n: 3,                  // Number of dimensions
         n0: 1.0,               // Strength of magnetic field
-        kAct: [1.0, 1.0, 1.0], // Actual k for manual or random measurement sources
-        lAct: [0.0, 0.0, 0.0], // Actual l for manual or random measurement sources
+        kAct0: 1.0,            // Actual k for manual or random measurement sources
+        kAct1: 1.0,            // Actual k for manual or random measurement sources
+        kAct2: 1.0,            // Actual k for manual or random measurement sources
+        lAct0: 0.0,            // Actual l for manual or random measurement sources
+        lAct1: 0.0,            // Actual l for manual or random measurement sources
+        lAct2: 0.0,            // Actual l for manual or random measurement sources
         sigmaK0: 0.25,         // Initial standard deviation of uncertainty of k
         sigmaK: 0.01,          // Process standard deviation of uncertainty of k
         sigmaM: 0.05,          // Small noise scale
@@ -50,9 +54,9 @@ vm = new Vue({
         },
         check_kAct: function() {
             var n = parseInt(this.n);
-            if (this.kAct[0]<=0) { this.kAct[0] = params.kAct[0]; }
-            if (n>=2 && this.kAct[1]<=0) { this.kAct[1] = params.kAct[1]; }
-            if (n===3 && this.kAct[2]<=0) { this.kAct[2] = params.kAct[2]; }
+            if (this.kAct0<=0) { this.kAct0 = params.kAct[0]; }
+            if (n>=2 && this.kAct1<=0) { this.kAct1 = params.kAct[1]; }
+            if (n===3 && this.kAct2<=0) { this.kAct2 = params.kAct[2]; }
         },
         check_lAct: function() { },
         check_sigmaK0: function() {
@@ -69,12 +73,12 @@ vm = new Vue({
                 params.source === parseInt(this.source) &&
                 params.n === this.n &&
                 params.n0 === this.n0 &&
-                params.kAct[0] === this.kAct[0] &&
-                params.kAct[1] === this.kAct[1] &&
-                params.kAct[2] === this.kAct[2] &&
-                params.lAct[0] === this.lAct[0] &&
-                params.lAct[1] === this.lAct[1] &&
-                params.lAct[2] === this.lAct[2] &&
+                params.kAct[0] === this.kAct0 &&
+                params.kAct[1] === this.kAct1 &&
+                params.kAct[2] === this.kAct2 &&
+                params.lAct[0] === this.lAct0&&
+                params.lAct[1] === this.lAct1 &&
+                params.lAct[2] === this.lAct2 &&
                 params.sigmaK0 === this.sigmaK0 &&
                 params.sigmaK === this.sigmaK &&
                 params.sigmaM === this.sigmaM
@@ -85,8 +89,8 @@ vm = new Vue({
                 source: parseInt(this.source),
                 n: this.n,
                 n0: this.n0,
-                kAct: [this.kAct[0], this.kAct[1], this.kAct[2]],
-                lAct: [this.lAct[0], this.lAct[1], this.lAct[2]],
+                kAct: [this.kAct0, this.kAct1, this.kAct2],
+                lAct: [this.lAct0, this.lAct1, this.lAct2],
                 sigmaK0: this.sigmaK0,
                 sigmaK: this.sigmaK,
                 sigmaM: this.sigmaM
@@ -135,8 +139,12 @@ vm = new Vue({
                 this.source = params.source;
                 this.n = params.n;
                 this.n0 = params.n0;
-                this.kAct = params.kAct;
-                this.lAct = params.lAct;
+                this.kAct0 = params.kAct[0];
+                this.kAct1 = params.kAct[1];
+                this.kAct2 = params.kAct[2];
+                this.lAct0 = params.lAct[0];
+                this.lAct1 = params.lAct[1];
+                this.lAct2 = params.lAct[2];
                 this.sigmaK0 = params.sigmaK0;
                 this.sigmaK = params.sigmaK;
                 this.sigmaM = params.sigmaM;
@@ -144,12 +152,12 @@ vm = new Vue({
                 this.data['M1'] = 0;
                 this.data['M2'] = 0;
                 this.data['M3'] = 0;
-                this.data['KAct1'] = this.kAct[0];
-                this.data['KAct2'] = this.kAct[1];
-                this.data['KAct3'] = this.kAct[2];
-                this.data['LAct1'] = this.lAct[0];
-                this.data['LAct2'] = this.lAct[1];
-                this.data['LAct3'] = this.lAct[2];
+                this.data['KAct1'] = this.kAct0;
+                this.data['KAct2'] = this.kAct1;
+                this.data['KAct3'] = this.kAct2;
+                this.data['LAct1'] = this.lAct0;
+                this.data['LAct2'] = this.lAct1;
+                this.data['LAct3'] = this.lAct2;
                 this.data['N0'] = this.n0;
                 this.data['sigmaK0'] = this.sigmaK0;
                 this.data['sigmaK'] = this.sigmaK;

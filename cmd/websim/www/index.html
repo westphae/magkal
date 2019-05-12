@@ -42,31 +42,31 @@
             <div class="row" v-if="source==0 || source==1">
                 <div class="col s4">
                     <div class="input-field col s12">
-                        <input type="number" v-model.number="kAct[0]" @change="check_kAct()">
+                        <input type="number" v-model.number="kAct0" @change="check_kAct()">
                         <label>Actual k0</label>
                     </div>
                     <div class="input-field col s12">
-                        <input type="number" v-model.number="lAct[0]" @change="check_lAct()">
+                        <input type="number" v-model.number="lAct0" @change="check_lAct()">
                         <label>Actual l0</label>
                     </div>
                 </div>
                 <div class="col s4" v-if="n>=2">
                     <div class="input-field col s12">
-                        <input type="number" v-model.number="kAct[1]" @change="check_kAct()">
+                        <input type="number" v-model.number="kAct1" @change="check_kAct()">
                         <label>Actual k1</label>
                     </div>
                     <div class="input-field col s12">
-                        <input type="number" v-model.number="lAct[1]" @change="check_lAct()">
+                        <input type="number" v-model.number="lAct1" @change="check_lAct()">
                         <label>Actual l1</label>
                     </div>
                 </div>
                 <div class="col s4" v-if="n==3">
                     <div class="input-field col s12">
-                        <input type="number" v-model.number="kAct[2]" @change="check_kAct()">
+                        <input type="number" v-model.number="kAct2" @change="check_kAct()">
                         <label>Actual k2</label>
                     </div>
                     <div class="input-field col s12">
-                        <input type="number" v-model.number="lAct[2]" @change="check_lAct()">
+                        <input type="number" v-model.number="lAct2" @change="check_lAct()">
                         <label>Actual l2</label>
                     </div>
                 </div>
