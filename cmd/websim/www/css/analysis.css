@@ -52,38 +52,8 @@ svg {
 
 .line {
     stroke-width: 2;
+    stroke: red;
     fill: none;
-}
-
-.area {
-    fill-opacity: 0.4;
-}
-
-.line.x {
-    stroke: Red;
-    color: Red;
-}
-
-.area.x {
-    fill: Red;
-}
-
-.line.y {
-    stroke: Green;
-    color: Green;
-}
-
-.area.y {
-    fill: Green;
-}
-
-.line.z {
-    stroke: Blue;
-    color: Blue;
-}
-
-.area.z {
-    fill: Blue;
 }
 
 .axis path,

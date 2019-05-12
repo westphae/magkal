@@ -374,3 +374,92 @@ function calcEllipse(pKK, pLL, pKL) {
     var b = Math.sqrt(num/(pKK-den+pLL));
     return {'a': a, 'b': b, 'alpha': alpha*180/Math.PI}
 }
+
+// Draw dTheta Plot
+function makeDThetaPlot(el) {
+    var tLim=45, bLim=-45, data={};
+
+    var x = d3.scaleLinear()
+        .domain([0, 360])
+        .range([0, width-margin.left-margin.right]);
+
+    var y = d3.scaleLinear()
+        .domain([bLim, tLim])
+        .range([height-margin.top-margin.bottom, 0]);
+
+    var xAxis = d3.axisBottom()
+        .scale(x);
+
+    var yAxis = d3.axisLeft()
+        .scale(y);
+
+    var svg = d3.select(el).append("svg")
+        .attr("width", width)
+        .attr("height", height)
+        .append("g")
+        .attr("transform", "translate("+margin.left+","+margin.top+")");
+
+    var xAxisLine = svg.append("g")
+        .attr("class", "x axis")
+        .attr("transform", "translate(0," + y(0) + ")")
+        .call(xAxis);
+
+    xAxisLine.append("text")
+        .attr("x", 6)
+        .attr("dx", ".71em")
+        .style("text-anchor", "end")
+        .text("Actual Heading");
+
+    var yAxisLine = svg.append("g")
+        .attr("class", "y axis")
+        .attr("transform", "translate(" + x(0) + ",0)")
+        .call(yAxis);
+
+    yAxisLine.append("text")
+        .attr("y", 6)
+        .attr("dy", ".71em")
+        .style("text-anchor", "end")
+        .text("Heading Error");
+
+    var thetas = [];
+    for (var theta=0; theta<360; theta++) {
+        thetas.push(theta)
+    }
+
+    var xLine = d3.line()
+        .x(function (theta) {
+            return x(theta);
+        })
+        .y(function (theta) {
+            var dTheta = Math.atan2(
+                data["ky"]/data["kActy"]*(data["n0"]*Math.sin(theta*Math.PI/180)-data["lActy"])+data["ly"],
+                data["kx"]/data["kActx"]*(data["n0"]*Math.cos(theta*Math.PI/180)-data["lActx"])+data["lx"]
+            )*180/Math.PI-theta;
+            if (dTheta<-180) {
+                dTheta += 360;
+            }
+            if (dTheta>180) {
+                dTheta -= 360;
+            }
+            return y(dTheta);
+        });
+
+    var xPath = svg.append("g")
+        .append("path")
+        .datum(thetas)
+        .attr("class", "line")
+        .attr("d", xLine);
+
+    return function(datum) {
+        data = {
+            'kx': datum['K1'], 'ky': datum['K2'],
+            'lx': datum['L1'], 'ly': datum['L2'],
+            'kActx': datum['KAct1'], 'kActy': datum['KAct2'],
+            'lActx': datum['LAct1'], 'lActy': datum['LAct2'],
+            'n0': datum['N0']
+        };
+
+        xPath.attr("d", xLine);
+    }
+}
+

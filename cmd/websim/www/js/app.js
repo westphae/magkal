@@ -20,6 +20,11 @@ vm = new Vue({
         measuring: false,      // Are we measuring continuously?
         connected: false,      // Whether or not the websocket is connected
         mxs_update: null,             // M cross-section plot
+        k1l1_update: null,
+        dTheta_update: null,
+        k2l2_update: null,
+        kk_update: null,
+        ll_update: null,
         data: {}               // Data to pass into plots
     },
 
@@ -242,6 +247,7 @@ vm = new Vue({
                 this.k2l2_update(this.data);
                 this.kk_update(this.data);
                 this.ll_update(this.data);
+                this.dTheta_update(this.data);
             }
 
             var element = document.getElementById('messages');

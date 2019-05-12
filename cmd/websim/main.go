@@ -98,7 +98,7 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 				log.Printf("ws error sending ping: %s\n", err)
 				break
 			}
-			timeout = time.NewTimer(4 * time.Second)
+			timeout = time.NewTimer(10 * time.Second)
 
 			select {
 			case <-pingTime.C:
