@@ -2,6 +2,8 @@ var params = {},
     self,
     measureInterval;
 
+var dispatch = d3.dispatch("measure_request", "measurement", "estimate_request", "estimate");
+
 vm = new Vue({
     el: '#app',
 
@@ -39,6 +41,22 @@ vm = new Vue({
         this.ws.addEventListener('open', function() { self.connected = true; });
         this.ws.addEventListener('close', function() { self.connected = false; });
         this.ws.addEventListener('message', this.handleMessages);
+        dispatch.on("measure_request", function(msg) {
+            console.log("received measure_request");
+            self.ws.send(
+                JSON.stringify({"measure": msg})
+            );
+        });
+        dispatch.on("estimate_request", function(msg) {
+            console.log("received estimate_request");
+            self.ws.send(
+                JSON.stringify({"estimate": msg})
+            );
+        });
+        dispatch.on("measurement", function() {
+            console.log("received measurement");
+           dispatch.call("estimate_request", this, {"nn": self.n0 * self.n0})
+        });
     },
 
     methods: {
@@ -104,19 +122,15 @@ vm = new Vue({
             console.log(msg);
         },
         measureOnce: function () {
-            var msg = {"measure": {"m0": null}, "estimate": {"nn": self.n0*self.n0}};
-            this.ws.send(
-                JSON.stringify(msg)
-            );
+            var msg = {"m0": null};
+            dispatch.call("measure_request", this, msg);
             console.log("measuring once, sent: ");
             console.log(msg);
         },
         measureMany: function () {
             measureInterval = setInterval(function () {
-                var msg = {"measure": {"m0": null}, "estimate": {"nn": self.n0*self.n0}};
-                self.ws.send(
-                    JSON.stringify(msg)
-                );
+                var msg = {"m0": null};
+                dispatch.call("measure_request", this, msg);
             }, 50);
             this.measuring = true;
             console.log("measuring many");
@@ -170,12 +184,21 @@ vm = new Vue({
 
                 d3.select('#m-plot').selectAll('svg').remove();
                 this.mxs_update = makeMagXSPlot(1, 2, "#m-plot");
+                dispatch.on("estimate.mxs", function(msg) {
+                    console.log("received estimate, updating mxs");
+                    self.mxs_update(msg);
+                });
                 this.k1l1_update = makeKLPlot("L1", "K1", "#m-plot");
+                dispatch.on("estimate.k1l1", this.k1l1_update);
                 if (this.n>1) {
                     this.k2l2_update = makeKLPlot("L2", "K2", "#m-plot");
+                    dispatch.on("estimate.k2l2", this.k2l2_update);
                     this.kk_update = makeKLPlot("K1", "K2", "#m-plot");
+                    dispatch.on("estimate.kk", this.kk_update);
                     this.ll_update = makeKLPlot("L1", "L2", "#m-plot");
+                    dispatch.on("estimate.ll", this.ll_update);
                     this.dTheta_update = makeDThetaPlot("#m-plot");
+                    dispatch.on("estimate.dTheta", this.dTheta_update);
                 }
             }
 
@@ -193,6 +216,7 @@ vm = new Vue({
                 if (this.n===3) {
                     this.data['M3'] = msg.measurement[2];
                 }
+                dispatch.call("measurement", {}, this.data);
             }
 
             // Handle received state
@@ -248,15 +272,7 @@ vm = new Vue({
                     this.data['PL3K3'] = msg.state.p[5][4];
                     this.data['PL3L3'] = msg.state.p[5][5];
                 }
-            }
-
-            this.mxs_update(this.data);
-            this.k1l1_update(this.data);
-            if (this.n>1) {
-                this.k2l2_update(this.data);
-                this.kk_update(this.data);
-                this.ll_update(this.data);
-                this.dTheta_update(this.data);
+                dispatch.call("estimate", self, self.data);
             }
 
             var element = document.getElementById('messages');
