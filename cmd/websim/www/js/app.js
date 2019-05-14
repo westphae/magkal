@@ -183,22 +183,19 @@ vm = new Vue({
                     '<br/>';
 
                 d3.select('#m-plot').selectAll('svg').remove();
-                this.mxs_update = makeMagXSPlot(1, 2, "#m-plot");
-                dispatch.on("estimate.mxs", function(msg) {
-                    console.log("received estimate, updating mxs");
-                    self.mxs_update(msg);
-                });
-                this.k1l1_update = makeKLPlot("L1", "K1", "#m-plot");
-                dispatch.on("estimate.k1l1", this.k1l1_update);
+                this.mxs_update = new MagXSPlot(1, 2, "#m-plot");
+                dispatch.on("estimate.mxs", this.mxs_update.update_state);
+                this.k1l1_update = new KLPlot("L1", "K1", "#m-plot");
+                dispatch.on("estimate.k1l1", this.k1l1_update.update_state);
                 if (this.n>1) {
-                    this.k2l2_update = makeKLPlot("L2", "K2", "#m-plot");
-                    dispatch.on("estimate.k2l2", this.k2l2_update);
-                    this.kk_update = makeKLPlot("K1", "K2", "#m-plot");
-                    dispatch.on("estimate.kk", this.kk_update);
-                    this.ll_update = makeKLPlot("L1", "L2", "#m-plot");
-                    dispatch.on("estimate.ll", this.ll_update);
-                    this.dTheta_update = makeDThetaPlot("#m-plot");
-                    dispatch.on("estimate.dTheta", this.dTheta_update);
+                    this.k2l2_update = new KLPlot("L2", "K2", "#m-plot");
+                    dispatch.on("estimate.k2l2", this.k2l2_update.update_state);
+                    this.kk_update = new KLPlot("K1", "K2", "#m-plot");
+                    dispatch.on("estimate.kk", this.kk_update.update_state);
+                    this.ll_update = new KLPlot("L1", "L2", "#m-plot");
+                    dispatch.on("estimate.ll", this.ll_update.update_state);
+                    this.dTheta_update = new DThetaPlot("#m-plot");
+                    dispatch.on("estimate.dTheta", this.dTheta_update.update_state);
                 }
             }
 
@@ -216,7 +213,7 @@ vm = new Vue({
                 if (this.n===3) {
                     this.data['M3'] = msg.measurement[2];
                 }
-                dispatch.call("measurement", {}, this.data);
+                dispatch.call("measurement", this, this.data);
             }
 
             // Handle received state
@@ -272,7 +269,7 @@ vm = new Vue({
                     this.data['PL3K3'] = msg.state.p[5][4];
                     this.data['PL3L3'] = msg.state.p[5][5];
                 }
-                dispatch.call("estimate", self, self.data);
+                dispatch.call("estimate", this, this.data);
             }
 
             var element = document.getElementById('messages');

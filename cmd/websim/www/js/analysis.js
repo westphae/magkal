@@ -5,211 +5,220 @@ var width = 400, height=400,
 // 1. Draw a dot for mx,my
 // 2. Draw a small circle for lx,ly, both actual and predicted
 // 3. Draw an ellipse for n^2==n0^2, both actual and predicted
-function makeMagXSPlot(ax, ay, el) {
-    var llLim=1e9, rrLim=-1e9, ttLim=-1e9, bbLim=1e9,
-        lLim, rLim, tLim, bLim,
-        data=[], col, xBuf, yBuf;
+function MagXSPlot(ax, ay, el) {
+    var self = this;
+    this.el = el;
+    this.ax = ax;
+    this.ay = ay;
+    this.llLim=1e9;
+    this.rrLim=-1e9;
+    this.ttLim=-1e9;
+    this.bbLim=1e9;
+    this.xBuf = 0;
+    this.yBuf = 0;
+    this.data=[];
 
-    switch (ax+ay) {
+    this.col = "Black";
+    switch (this.ax+this.ay) {
         case 3:
-            col = "Blue";
+            this.col = "Blue";
             break;
         case 4:
-            col = "Green";
+            this.col = "Green";
             break;
         case 5:
-            col = "Red";
+            this.col = "Red";
     }
 
-    var x = d3.scaleLinear()
-        .domain([llLim, rrLim])
+    this.x = d3.scaleLinear()
+        .domain([this.llLim, this.rrLim])
         .range([0, width-margin.left-margin.right]);
 
-    var y = d3.scaleLinear()
-        .domain([bbLim, ttLim])
+    this.y = d3.scaleLinear()
+        .domain([this.bbLim, this.ttLim])
         .range([height-margin.top-margin.bottom, 0]);
 
-    var xAxis = d3.axisBottom()
-        .scale(x);
+    this.xAxis = d3.axisBottom()
+        .scale(this.x);
 
-    var yAxis = d3.axisLeft()
-        .scale(y);
+    this.yAxis = d3.axisLeft()
+        .scale(this.y);
 
-    var svg = d3.select(el).append("svg")
+    this.svg = d3.select(el).append("svg")
         .attr("width", width)
         .attr("height", height)
         .append("g")
         .attr("transform", "translate("+margin.left+","+margin.top+")");
 
-    var xAxisLine = svg.append("g")
+    this.xAxisLine = this.svg.append("g")
         .attr("class", "x axis")
-        .attr("transform", "translate(0," + y(0) + ")")
-        .call(xAxis);
+        .attr("transform", "translate(0," + this.y(0) + ")")
+        .call(this.xAxis);
 
-    xAxisLine.append("text")
+    this.xAxisLine.append("text")
         .attr("x", 6)
         .attr("dx", ".71em")
         .style("text-anchor", "end")
-        .text("m"+ax);
+        .text("m"+this.ax);
 
-    var yAxisLine = svg.append("g")
+    this.yAxisLine = this.svg.append("g")
         .attr("class", "y axis")
-        .attr("transform", "translate(" + x(0) + ",0)")
-        .call(yAxis);
+        .attr("transform", "translate(" + this.x(0) + ",0)")
+        .call(this.yAxis);
 
-    yAxisLine.append("text")
+    this.yAxisLine.append("text")
         .attr("y", 6)
         .attr("dy", ".71em")
         .style("text-anchor", "end")
         .text("m"+ay);
 
-    var dots = svg.append("g");
+    this.dots = this.svg.append("g");
 
-    var ctr = svg.append("circle")
+    this.ctr = this.svg.append("circle")
         .attr("class", "center estimated")
         .attr("r", 2)
-        .attr("cx", x(0))
-        .attr("cy", y(0));
+        .attr("cx", this.x(0))
+        .attr("cy", this.y(0));
 
-    var crc = svg.append("ellipse")
+    this.crc = this.svg.append("ellipse")
         .attr("class", "ellipse estimated")
-        .attr("cx", x(0))
-        .attr("cy", y(0))
+        .attr("cx", this.x(0))
+        .attr("cy", this.y(0))
         .attr("rx", 0)
         .attr("ry", 0);
 
-    var ctrAct = svg.append("circle")
+    this.ctrAct = this.svg.append("circle")
         .attr("class", "center actual")
         .attr("r", 2)
-        .attr("cx", x(0))
-        .attr("cy", y(0));
+        .attr("cx", this.x(0))
+        .attr("cy", this.y(0));
 
-    var crcAct = svg.append("ellipse")
+    this.crcAct = this.svg.append("ellipse")
         .attr("class", "ellipse actual")
-        .attr("cx", x(0))
-        .attr("cy", y(0))
+        .attr("cx", this.x(0))
+        .attr("cy", this.y(0))
         .attr("rx", 0)
         .attr("ry", 0);
 
-    var vec = svg.append("line")
+    this.vec = this.svg.append("line")
         .attr("class", "pointer")
-        .attr("x1", x(0))
-        .attr("y1", y(0))
-        .attr("x2", x(0))
-        .attr("y2", y(0));
+        .attr("x1", this.x(0))
+        .attr("y1", this.y(0))
+        .attr("x2", this.x(0))
+        .attr("y2", this.y(0));
 
-    return function(datum) {
+    this.update_state = function(datum) {
         var d = {
-            'mx': datum['M'+ax], 'my': datum['M'+ay],
-            'kx': datum['K'+ax], 'ky': datum['K'+ay],
-            'lx': datum['L'+ax], 'ly': datum['L'+ay],
-            'kActx': datum['KAct'+ax], 'kActy': datum['KAct'+ay],
-            'lActx': datum['LAct'+ax], 'lActy': datum['LAct'+ay],
+            'mx': datum['M'+self.ax], 'my': datum['M'+self.ay],
+            'kx': datum['K'+self.ax], 'ky': datum['K'+self.ay],
+            'lx': datum['L'+self.ax], 'ly': datum['L'+self.ay],
+            'kActx': datum['KAct'+self.ax], 'kActy': datum['KAct'+self.ay],
+            'lActx': datum['LAct'+self.ax], 'lActy': datum['LAct'+self.ay],
             'n0': datum['N0'], 'sigmaM': datum['sigmaM']
         };
-        data.push(d);
+        self.data.push(d);
 
-        var ddots = dots.selectAll('circle').data(data);
+        var ddots = self.dots.selectAll('circle').data(self.data);
 
         var changed = false;
-        if (d['mx']-d['n0']*d['sigmaM'] < llLim) {
-            llLim = d['mx']-d['n0']*d['sigmaM'];
+        if (d['mx']-d['n0']*d['sigmaM'] < self.llLim) {
+            self.llLim = d['mx']-d['n0']*d['sigmaM'];
             changed = true;
         }
-        lLim = llLim;
-        if ((-d['n0']-d['lx'])/d['kx'] < lLim) {
-            lLim = (-d['n0']-d['lx'])/d['kx'];
+        self.lLim = self.llLim;
+        if ((-d['n0']-d['lx'])/d['kx'] < self.lLim) {
+            self.lLim = (-d['n0']-d['lx'])/d['kx'];
             changed = true;
         }
-        if ((-d['n0']-d['lActx'])/d['kActx'] < lLim) {
-            lLim = (-d['n0']-d['lActx'])/d['kActx'];
+        if ((-d['n0']-d['lActx'])/d['kActx'] < self.lLim) {
+            self.lLim = (-d['n0']-d['lActx'])/d['kActx'];
             changed = true;
         }
-        if (d['mx']+d['n0']*d['sigmaM'] > rrLim) {
-            rrLim = d['mx']+d['n0']*d['sigmaM'];
+        if (d['mx']+d['n0']*d['sigmaM'] > self.rrLim) {
+            self.rrLim = d['mx']+d['n0']*d['sigmaM'];
             changed = true;
         }
-        rLim = rrLim;
-        if ((d['n0']-d['lx'])/d['kx'] > rLim) {
-            rLim = (d['n0']-d['lx'])/d['kx'];
+        self.rLim = self.rrLim;
+        if ((d['n0']-d['lx'])/d['kx'] > self.rLim) {
+            self.rLim = (d['n0']-d['lx'])/d['kx'];
             changed = true;
         }
-        if ((d['n0']-d['lActx'])/d['kActx'] > rLim) {
-            rLim = (d['n0']-d['lActx'])/d['kActx'];
+        if ((d['n0']-d['lActx'])/d['kActx'] > self.rLim) {
+            self.rLim = (d['n0']-d['lActx'])/d['kActx'];
             changed = true;
         }
-        if (d['my']-d['n0']*d['sigmaM'] < bbLim) {
-            bbLim = d['my']-d['n0']*d['sigmaM'];
+        if (d['my']-d['n0']*d['sigmaM'] < self.bbLim) {
+            self.bbLim = d['my']-d['n0']*d['sigmaM'];
             changed = true;
         }
-        bLim = bbLim;
-        if ((-d['n0']-d['ly'])/d['ky'] < bLim) {
-            bLim = (-d['n0']-d['ly'])/d['ky'];
+        self.bLim = self.bbLim;
+        if ((-d['n0']-d['ly'])/d['ky'] < self.bLim) {
+            self.bLim = (-d['n0']-d['ly'])/d['ky'];
             changed = true;
         }
-        if ((-d['n0']-d['lActy'])/d['kActy'] < bLim) {
-            bLim = (-d['n0']-d['lActy'])/d['kActy'];
+        if ((-d['n0']-d['lActy'])/d['kActy'] < self.bLim) {
+            self.bLim = (-d['n0']-d['lActy'])/d['kActy'];
             changed = true;
         }
-        if (d['my']+d['n0']*d['sigmaM'] > ttLim) {
-            ttLim = d['my']+d['n0']*d['sigmaM'];
+        if (d['my']+d['n0']*d['sigmaM'] > self.ttLim) {
+            self.ttLim = d['my']+d['n0']*d['sigmaM'];
             changed = true;
         }
-        tLim = ttLim;
-        if ((d['n0']-d['ly'])/d['ky'] > tLim) {
-            tLim = (d['n0']-d['ly'])/d['ky'];
+        self.tLim = self.ttLim;
+        if ((d['n0']-d['ly'])/d['ky'] > self.tLim) {
+            self.tLim = (d['n0']-d['ly'])/d['ky'];
             changed = true;
         }
-        if ((d['n0']-d['lActy'])/d['kActy'] > tLim) {
-            tLim = (d['n0']-d['lActy'])/d['kActy'];
+        if ((d['n0']-d['lActy'])/d['kActy'] > self.tLim) {
+            self.tLim = (d['n0']-d['lActy'])/d['kActy'];
             changed = true;
         }
 
         if (changed) {
-            xBuf = Math.max(0, (tLim-bLim)-(rLim-lLim))/2;
-            yBuf = Math.max(0, (rLim-lLim)-(tLim-bLim))/2;
-            x.domain([lLim-xBuf, rLim+xBuf]);
-            xAxis.scale(x);
-            y.domain([bLim-yBuf, tLim+yBuf]);
-            yAxis.scale(y);
-            xAxisLine.attr("transform", "translate(0," + y(0) + ")")
-                .call(xAxis);
-            yAxisLine.attr("transform", "translate(" + x(0) + ",0)")
-                .call(yAxis);
-            ddots.attr("cx", function(d) { return x(d['mx']); })
-                .attr("cy", function(d) { return y(d['my']); });
+            self.xBuf = Math.max(0, (self.tLim-self.bLim)-(self.rLim-self.lLim))/2;
+            self.yBuf = Math.max(0, (self.rLim-self.lLim)-(self.tLim-self.bLim))/2;
+            self.x.domain([self.lLim-self.xBuf, self.rLim+self.xBuf]);
+            self.xAxis.scale(self.x);
+            self.y.domain([self.bLim-self.yBuf, self.tLim+self.yBuf]);
+            self.yAxis.scale(self.y);
+            self.xAxisLine.attr("transform", "translate(0," + self.y(0) + ")")
+                .call(self.xAxis);
+            self.yAxisLine.attr("transform", "translate(" + self.x(0) + ",0)")
+                .call(self.yAxis);
+            ddots.attr("cx", function(d) { return self.x(d['mx']); })
+                .attr("cy", function(d) { return self.y(d['my']); });
         }
 
         ddots.enter().append("circle")
             .attr("class", "dot")
-            .attr("r", (x(d['n0']*d['sigmaM'])-x(-d['n0']*d['sigmaM']))/2)
-            .style("fill", col)
-            .attr("cx", function(d) { return x(d['mx']); })
-            .attr("cy", function(d) { return y(d['my']); });
+            .attr("r", (self.x(d['n0']*d['sigmaM'])-self.x(-d['n0']*d['sigmaM']))/2)
+            .style("fill", self.col)
+            .attr("cx", function(d) { return self.x(d['mx']); })
+            .attr("cy", function(d) { return self.y(d['my']); });
 
         ddots.exit().remove();
 
-        ctr.attr("cx", x(-d['lx']/d['kx']))
-            .attr("cy", y(-d['ly']/d['ky']));
+        self.ctr.attr("cx", self.x(-d['lx']/d['kx']))
+            .attr("cy", self.y(-d['ly']/d['ky']));
 
-        ctrAct.attr("cx", x(-d['lActx']/d['kActx']))
-            .attr("cy", y(-d['lActy']/d['kActy']));
+        self.ctrAct.attr("cx", self.x(-d['lActx']/d['kActx']))
+            .attr("cy", self.y(-d['lActy']/d['kActy']));
 
-        crc.attr("cx", x(-d['lx']/d['kx']))
-            .attr("cy", y(-d['ly']/d['ky']))
-            .attr("rx", (x((d['n0']-d['lx'])/d['kx']) - x((-d['n0']-d['lx'])/d['kx']))/2)
-            .attr("ry", (y((-d['n0']-d['ly'])/d['ky']) - y((d['n0']-d['ly'])/d['ky']))/2);
+        self.crc.attr("cx", self.x(-d['lx']/d['kx']))
+            .attr("cy", self.y(-d['ly']/d['ky']))
+            .attr("rx", (self.x((d['n0']-d['lx'])/d['kx']) - self.x((-d['n0']-d['lx'])/d['kx']))/2)
+            .attr("ry", (self.y((-d['n0']-d['ly'])/d['ky']) - self.y((d['n0']-d['ly'])/d['ky']))/2);
 
-        crcAct.attr("cx", x(-d['lActx']/d['kActx']))
-            .attr("cy", y(-d['lActy']/d['kActy']))
-            .attr("rx", (x((d['n0']-d['lActx'])/d['kActx']) - x((-d['n0']-d['lActx'])/d['kActx']))/2)
-            .attr("ry", (y((-d['n0']-d['lActy'])/d['kActy']) - y((d['n0']-d['lActy'])/d['kActy']))/2);
+        self.crcAct.attr("cx", self.x(-d['lActx']/d['kActx']))
+            .attr("cy", self.y(-d['lActy']/d['kActy']))
+            .attr("rx", (self.x((d['n0']-d['lActx'])/d['kActx']) - self.x((-d['n0']-d['lActx'])/d['kActx']))/2)
+            .attr("ry", (self.y((-d['n0']-d['lActy'])/d['kActy']) - self.y((d['n0']-d['lActy'])/d['kActy']))/2);
 
-        vec
-            .attr("x1", x(-d['lx']/d['kx']))
-            .attr("y1", y(-d['ly']/d['ky']))
-            .attr("x2", x(d['mx']))
-            .attr("y2", y(d['my']))
+        self.vec
+            .attr("x1", self.x(-d['lx']/d['kx']))
+            .attr("y1", self.y(-d['ly']/d['ky']))
+            .attr("x2", self.x(d['mx']))
+            .attr("y2", self.y(d['my']))
     }
 }
 
@@ -218,132 +227,141 @@ function makeMagXSPlot(ax, ay, el) {
 // 1. Draw a dot at K1, L3
 // 3. Draw error ellipse for K1, L3
 // 4. Draw lines of constant N0 for K1,L1 etc.
-function makeKLPlot(ax, ay, el) {
-    var lLim=0, rLim=0, tLim=0, bLim=0,
-        col, xBuf, yBuf;
+function KLPlot(ax, ay, el) {
+    var self = this;
+    this.el = el;
+    this.ax = ax;
+    this.ay = ay;
+    this.lLim=0;
+    this.rLim=0;
+    this.tLim=0;
+    this.bLim=0;
+    this.xBuf = 0;
+    this.yBuf = 0;
 
-    switch (ax[0] + ay[0]) {
+    this.col = "Black";
+    switch (this.ax[0] + this.ay[0]) {
         case 'KK':
-            col = "Blue";
-            lLim = 0;
-            bLim = 0;
+            this.col = "Blue";
+            this.lLim = 0;
+            this.bLim = 0;
             break;
         case 'LK':
-            col = "Green";
-            bLim = 0;
+            this.col = "Green";
+            this.bLim = 0;
             break;
         case 'LL':
-            col = "Red";
+            this.col = "Red";
     }
 
-    var x = d3.scaleLinear()
-        .domain([lLim, rLim])
+    this.x = d3.scaleLinear()
+        .domain([this.lLim, this.rLim])
         .range([0, width-margin.left-margin.right]);
 
-    var y = d3.scaleLinear()
-        .domain([bLim, tLim])
+    this.y = d3.scaleLinear()
+        .domain([this.bLim, this.tLim])
         .range([height-margin.top-margin.bottom, 0]);
 
-    var xAxis = d3.axisBottom()
-        .scale(x);
+    this.xAxis = d3.axisBottom()
+        .scale(this.x);
 
-    var yAxis = d3.axisLeft()
-        .scale(y);
+    this.yAxis = d3.axisLeft()
+        .scale(this.y);
 
-    var svg = d3.select(el).append("svg")
+    this.svg = d3.select(this.el).append("svg")
         .attr("width", width)
         .attr("height", height)
         .append("g")
         .attr("transform", "translate("+margin.left+","+margin.top+")");
 
-    var xAxisLine = svg.append("g")
+    this.xAxisLine = this.svg.append("g")
         .attr("class", "x axis")
-        .attr("transform", "translate(0," + y(0) + ")")
-        .call(xAxis);
+        .attr("transform", "translate(0," + this.y(0) + ")")
+        .call(this.xAxis);
 
-    xAxisLine.append("text")
+    this.xAxisLine.append("text")
         .attr("x", 6)
         .attr("dx", ".71em")
         .style("text-anchor", "end")
-        .text("m"+ax);
+        .text("m"+this.ax);
 
-    var yAxisLine = svg.append("g")
+    this.yAxisLine = this.svg.append("g")
         .attr("class", "y axis")
-        .attr("transform", "translate(" + x(0) + ",0)")
-        .call(yAxis);
+        .attr("transform", "translate(" + this.x(0) + ",0)")
+        .call(this.yAxis);
 
-    yAxisLine.append("text")
+    this.yAxisLine.append("text")
         .attr("y", 6)
         .attr("dy", ".71em")
         .style("text-anchor", "end")
-        .text("m"+ay);
+        .text("m"+this.ay);
 
-    var errEllipse = svg.append("g");
+    this.errEllipse = this.svg.append("g");
 
-    errEllipse.append("circle")
+    this.errEllipse.append("circle")
         .attr("class", "center estimated")
         .attr("r", 2);
 
-    var crc = errEllipse.append("ellipse")
+    this.crc = this.errEllipse.append("ellipse")
         .attr("class", "ellipse estimated")
         .attr("rx", 0)
         .attr("ry", 0);
 
-    var ctrAct = svg.append("circle")
+    this.ctrAct = this.svg.append("circle")
         .attr("class", "center actual")
         .attr("r", 2)
-        .attr("cx", x(0))
-        .attr("cy", y(0));
+        .attr("cx", this.x(0))
+        .attr("cy", this.y(0));
 
-    return function(datum) {
+    this.update_state = function(datum) {
         var d = {
-            'x': datum[ax], 'y': datum[ay],
-            'Actx': datum[ax[0]+'Act'+ax[1]], 'Acty': datum[ay[0]+'Act'+ay[1]],
-            'Pxx': datum['P'+ax+ax], 'Pxy': datum['P'+ax+ay], 'Pyy': datum['P'+ay+ay],
+            'x': datum[self.ax], 'y': datum[self.ay],
+            'Actx': datum[self.ax[0]+'Act'+self.ax[1]], 'Acty': datum[self.ay[0]+'Act'+self.ay[1]],
+            'Pxx': datum['P'+self.ax+self.ax], 'Pxy': datum['P'+self.ax+self.ay], 'Pyy': datum['P'+self.ay+self.ay],
             'n0': datum['N0'], 'sigmaM': datum['sigmaM']
         };
 
         var changed = false;
-        if (d['x'] < lLim) {
-            lLim = d['x'];
+        if (d['x'] < self.lLim) {
+            self.lLim = d['x'];
             changed = true;
         }
-        if (d['x'] > rLim) {
-            rLim = d['x'];
+        if (d['x'] > self.rLim) {
+            self.rLim = d['x'];
             changed = true;
         }
-        if (d['y'] < bLim) {
-            bLim = d['y'];
+        if (d['y'] < self.bLim) {
+            self.bLim = d['y'];
             changed = true;
         }
-        if (d['y'] > tLim) {
-            tLim = d['y'];
+        if (d['y'] > self.tLim) {
+            self.tLim = d['y'];
             changed = true;
         }
 
         if (changed) {
-            xBuf = Math.max(0, (tLim-bLim)-(rLim-lLim))/2;
-            yBuf = Math.max(0, (rLim-lLim)-(tLim-bLim))/2;
-            x.domain([lLim-xBuf, rLim+xBuf]);
-            xAxis.scale(x);
-            y.domain([bLim-yBuf, tLim+yBuf]);
-            yAxis.scale(y);
-            xAxisLine.attr("transform", "translate(0," + y(0) + ")")
-                .call(xAxis);
-            yAxisLine.attr("transform", "translate(" + x(0) + ",0)")
-                .call(yAxis);
+            self.xBuf = Math.max(0, (self.tLim-self.bLim)-(self.rLim-self.lLim))/2;
+            self.yBuf = Math.max(0, (self.rLim-self.lLim)-(self.tLim-self.bLim))/2;
+            self.x.domain([self.lLim-self.xBuf, self.rLim+self.xBuf]);
+            self.xAxis.scale(self.x);
+            self.y.domain([self.bLim-self.yBuf, self.tLim+self.yBuf]);
+            self.yAxis.scale(self.y);
+            self.xAxisLine.attr("transform", "translate(0," + self.y(0) + ")")
+                .call(self.xAxis);
+            self.yAxisLine.attr("transform", "translate(" + self.x(0) + ",0)")
+                .call(self.yAxis);
         }
 
         var errEllipseData = calcEllipse(d['Pxx'], d['Pyy'], d['Pxy']);
 
-        errEllipse.attr("transform", "translate(" + x(d['x']) + "," + y(d['y']) + ")");
+        self.errEllipse.attr("transform", "translate(" + self.x(d['x']) + "," + self.y(d['y']) + ")");
 
-        crc.attr("rx", (x(errEllipseData['a'])-x(-errEllipseData['a']))/2)
-            .attr("ry", (x(errEllipseData['b'])-x(-errEllipseData['b']))/2)
+        self.crc.attr("rx", (self.x(errEllipseData['a'])-self.x(-errEllipseData['a']))/2)
+            .attr("ry", (self.x(errEllipseData['b'])-self.x(-errEllipseData['b']))/2)
             .attr("transform", "rotate("+errEllipseData['alpha']+")");
 
-        ctrAct.attr("cx", x(d['Actx']))
-            .attr("cy", y(d['Acty']));
+        self.ctrAct.attr("cx", self.x(d['Actx']))
+            .attr("cy", self.y(d['Acty']));
     }
 }
 
@@ -376,57 +394,59 @@ function calcEllipse(pKK, pLL, pKL) {
 }
 
 // Draw dTheta Plot
-function makeDThetaPlot(el) {
-    var data={};
+function DThetaPlot(el) {
+    var self = this;
+    this.el = el;
+    this.data={};
 
-    var x = d3.scaleLinear()
+    this.x = d3.scaleLinear()
         .domain([0, 360])
         .range([0, width-margin.left-margin.right]);
 
-    var y = d3.scaleLinear()
+    this.y = d3.scaleLinear()
         .domain([0, 0])
         .range([height-margin.top-margin.bottom, 0]);
 
-    var xAxis = d3.axisBottom()
-        .scale(x);
+    this.xAxis = d3.axisBottom()
+        .scale(this.x);
 
-    var yAxis = d3.axisLeft()
-        .scale(y);
+    this.yAxis = d3.axisLeft()
+        .scale(this.y);
 
-    var svg = d3.select(el).append("svg")
+    this.svg = d3.select(this.el).append("svg")
         .attr("width", width)
         .attr("height", height)
         .append("g")
         .attr("transform", "translate("+margin.left+","+margin.top+")");
 
-    var xAxisLine = svg.append("g")
+    this.xAxisLine = this.svg.append("g")
         .attr("class", "x axis")
-        .attr("transform", "translate(0," + y(0) + ")")
-        .call(xAxis);
+        .attr("transform", "translate(0," + this.y(0) + ")")
+        .call(this.xAxis);
 
-    xAxisLine.append("text")
+    this.xAxisLine.append("text")
         .attr("x", 6)
         .attr("dx", ".71em")
         .style("text-anchor", "end")
         .text("Actual Heading");
 
-    var yAxisLine = svg.append("g")
+    this.yAxisLine = this.svg.append("g")
         .attr("class", "y axis")
-        .attr("transform", "translate(" + x(0) + ",0)")
-        .call(yAxis);
+        .attr("transform", "translate(" + this.x(0) + ",0)")
+        .call(this.yAxis);
 
-    yAxisLine.append("text")
+    this.yAxisLine.append("text")
         .attr("y", 6)
         .attr("dy", ".71em")
         .style("text-anchor", "end")
         .text("Heading Error");
 
-    var thetas = d3.range(0, 360);
+    this.thetas = d3.range(0, 360);
 
-    function dTheta(theta) {
+    this.dTheta = function(theta) {
         var dTheta = Math.atan2(
-            data["ky"]/data["kActy"]*(data["n0"]*Math.sin(theta*Math.PI/180)-data["lActy"])+data["ly"],
-            data["kx"]/data["kActx"]*(data["n0"]*Math.cos(theta*Math.PI/180)-data["lActx"])+data["lx"]
+            self.data["ky"]/self.data["kActy"]*(self.data["n0"]*Math.sin(theta*Math.PI/180)-self.data["lActy"])+self.data["ly"],
+            self.data["kx"]/self.data["kActx"]*(self.data["n0"]*Math.cos(theta*Math.PI/180)-self.data["lActx"])+self.data["lx"]
         )*180/Math.PI-theta;
         if (dTheta<-180) {
             dTheta += 360;
@@ -435,20 +455,20 @@ function makeDThetaPlot(el) {
             dTheta -= 360;
         }
         return dTheta;
-    }
+    };
 
-    var xLine = d3.line()
-        .x(function (theta) { return x(theta); })
-        .y(function(theta) { return y(dTheta(theta)); });
+    this.xLine = d3.line()
+        .x(function (theta) { return self.x(theta); })
+        .y(function(theta) { return self.y(self.dTheta(theta)); });
 
-    var xPath = svg.append("g")
+    this.xPath = this.svg.append("g")
         .append("path")
-        .datum(thetas)
+        .datum(this.thetas)
         .attr("class", "line")
-        .attr("d", xLine);
+        .attr("d", this.xLine);
 
-    return function(datum) {
-        data = {
+    this.update_state = function(datum) {
+        self.data = {
             'kx': datum['K1'], 'ky': datum['K2'],
             'lx': datum['L1'], 'ly': datum['L2'],
             'kActx': datum['KAct1'], 'kActy': datum['KAct2'],
@@ -456,8 +476,8 @@ function makeDThetaPlot(el) {
             'n0': datum['N0']
         };
 
-        var rr = thetas.reduce(function(oMax, x) {
-            var y = dTheta(x);
+        var rr = self.thetas.reduce(function(oMax, x) {
+            var y = self.dTheta(x);
             if (y<-oMax) {
                 oMax = -y;
             }
@@ -467,11 +487,15 @@ function makeDThetaPlot(el) {
             return Math.exp(Math.ceil(Math.log(oMax)));
         }, 0);
 
-        y.domain([-rr, rr]);
-        yAxis.scale(y);
-        xAxisLine.attr("transform", "translate(0," + y(0) + ")");
-        yAxisLine.call(yAxis);
+        self.y.domain([-rr, rr]);
+        self.yAxis.scale(self.y);
+        self.xAxisLine.attr("transform", "translate(0," + self.y(0) + ")");
+        self.yAxisLine.call(self.yAxis);
 
-        xPath.attr("d", xLine);
+        self.xPath.attr("d", self.xLine);
     }
+}
+
+function MagInputArea(el) {
+
 }
