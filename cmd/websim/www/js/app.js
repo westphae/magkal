@@ -25,7 +25,7 @@ vm = new Vue({
         params: params,        // Actual parameters currently being used, will be replaced by above when sent to server
         measuring: false,      // Are we measuring continuously?
         connected: false,      // Whether or not the websocket is connected
-        mxs_update: null,             // M cross-section plot
+        mxs_update: null,      // M cross-section plot
         k1l1_update: null,
         dTheta_update: null,
         k2l2_update: null,
@@ -122,14 +122,14 @@ vm = new Vue({
             console.log(msg);
         },
         measureOnce: function () {
-            var msg = {"m0": null};
+            var msg = {"a": null};
             dispatch.call("measure_request", this, msg);
             console.log("measuring once, sent: ");
             console.log(msg);
         },
         measureMany: function () {
             measureInterval = setInterval(function () {
-                var msg = {"m0": null};
+                var msg = {"a": null};
                 dispatch.call("measure_request", this, msg);
             }, 50);
             this.measuring = true;

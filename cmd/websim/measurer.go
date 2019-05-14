@@ -5,8 +5,9 @@ import (
 	"math/rand"
 )
 
-type measurement []float64
-type measurer func(m0 measurement) (m measurement)
+type measurement []float64 // A magnetometer measurement like [m1, m2, m3]
+type direction []float64 // Angles pointing in a direction like [theta, phi]
+type measurer func(a direction) (m measurement)
 
 // makeRandomMeasurer creates a function that returns a new measurement of m, the magnetometer measurement.
 // Inputs:
@@ -19,7 +20,7 @@ type measurer func(m0 measurement) (m measurement)
 // The returned function takes a rough measurement just to satisfy the interface, but doesn't use it.
 func makeRandomMeasurer(n int, n0 float64, k, l []float64, r float64) measurer {
 	if n == 1 {
-		return func(m0 measurement) (m measurement) {
+			return func(a direction) (m measurement) {
 			theta := 2 * math.Pi * (rand.Float64() - 0.5)
 			if theta < 0 {
 				return []float64{(-n0-l[0])/k[0] + r*rand.NormFloat64()}
@@ -28,7 +29,7 @@ func makeRandomMeasurer(n int, n0 float64, k, l []float64, r float64) measurer {
 		}
 	}
 	if n == 2 {
-		return func(m0 measurement) (m measurement) {
+		return func(a direction) (m measurement) {
 			theta := 2 * math.Pi * (rand.Float64() - 0.5)
 			nx := n0 * math.Cos(theta)
 			ny := n0 * math.Sin(theta)
@@ -38,7 +39,7 @@ func makeRandomMeasurer(n int, n0 float64, k, l []float64, r float64) measurer {
 			}
 		}
 	}
-	return func(m0 measurement) (m measurement) {
+	return func(a direction) (m measurement) {
 		theta := 2 * math.Pi * (rand.Float64() - 0.5)
 		phi := math.Acos(2*rand.Float64() - 1)
 		nx := n0 * math.Cos(theta)*math.Cos(phi)
@@ -64,16 +65,27 @@ func makeRandomMeasurer(n int, n0 float64, k, l []float64, r float64) measurer {
 //   a corrected measurement including noise.
 func makeManualMeasurer(n int, n0 float64, k, l []float64, r float64) measurer {
 	if n == 1 {
-		return func(m0 measurement) (m measurement) {
-			if m0[0] < -l[0]/k[0] {
+		return func(a direction) (m measurement) {
+			var theta float64
+			if a!=nil && len(a)>=1 {
+				theta = a[0]
+			} else {
+				theta = 2 * math.Pi * (rand.Float64() - 0.5)
+			}
+			if theta < 0 {
 				return []float64{(-n0-l[0])/k[0] + r*rand.NormFloat64()}
 			}
 			return []float64{(n0-l[0])/k[0] + r*rand.NormFloat64()}
 		}
 	}
 	if n == 2 {
-		return func(m0 measurement) (m measurement) {
-			theta := math.Atan2(k[1]*m0[1]+l[1], k[0]*m0[0]+l[0])
+		return func(a direction) (m measurement) {
+			var theta float64
+			if a!=nil && len(a)>=1 {
+				theta = a[0]
+			} else {
+				theta = 2 * math.Pi * (rand.Float64() - 0.5)
+			}
 			nx := n0 * math.Cos(theta)
 			ny := n0 * math.Sin(theta)
 			return []float64{
@@ -82,12 +94,15 @@ func makeManualMeasurer(n int, n0 float64, k, l []float64, r float64) measurer {
 			}
 		}
 	}
-	return func(m0 measurement) (m measurement) {
-		mx := k[0]*m0[0]+l[0]
-		my := k[1]*m0[1]+l[1]
-		mz := k[2]*m0[2]+l[2]
-		theta := math.Atan2(mx, my)
-		phi := math.Atan2(mz, math.Sqrt(mx*mx+my*my))
+	return func(a direction) (m measurement) {
+		var theta, phi float64
+		if a!=nil && len(a)>=2 {
+			theta = a[0]
+			phi = a[1]
+		} else {
+			theta = 2 * math.Pi * (rand.Float64() - 0.5)
+			phi = math.Acos(2*rand.Float64() - 1)
+		}
 		nx := n0 * math.Cos(theta)*math.Cos(phi)
 		ny := n0 * math.Sin(theta)*math.Cos(phi)
 		nz := n0 * math.Sin(phi)

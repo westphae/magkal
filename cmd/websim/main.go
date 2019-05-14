@@ -37,7 +37,7 @@ var defaultParams = params{
 }
 
 type measureCmd struct {
-	M0 measurement `json:"m0"` // Raw measurement (for manual), pre-noise
+	A direction `json:"a"` // Raw measurement (for manual), pre-noise
 }
 
 type estimateCmd struct {
@@ -150,7 +150,6 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 				L: myEstimator.L(),
 				P: myEstimator.P(),
 			},
-			nil,
 	}
 	if err = conn.WriteJSON(msgOut); err != nil {
 		log.Printf("Error writing params to websocket: %s\n", err)
@@ -201,7 +200,7 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 			msgIn.Measure = nil
 			log.Printf("Received raw measurement %v\n", cmd)
 
-			myMeasurement = myMeasurer(cmd.M0)
+			myMeasurement = myMeasurer(cmd.A)
 			msgOut.Measurement = &myMeasurement
 			log.Printf("Sending measurement %v\n", myMeasurement)
 		}
