@@ -23,6 +23,12 @@ svg {
     fill-opacity: 0.1;
 }
 
+.cur {
+    stroke-width: 0;
+    fill-opacity: 0.8;
+    fill: black;
+}
+
 .center.actual {
     fill: black;
     stroke-width: 2;

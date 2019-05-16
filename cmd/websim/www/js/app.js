@@ -185,6 +185,7 @@ vm = new Vue({
                 d3.select('#m-plot').selectAll('svg').remove();
                 this.mxs_update = new MagXSPlot(1, 2, "#m-plot");
                 dispatch.on("estimate.mxs", this.mxs_update.update_state);
+                dispatch.on("measurement.mxs", this.mxs_update.update_measurement);
                 this.k1l1_update = new KLPlot("L1", "K1", "#m-plot");
                 dispatch.on("estimate.k1l1", this.k1l1_update.update_state);
                 if (this.n>1) {

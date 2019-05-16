@@ -72,6 +72,8 @@ function MagXSPlot(ax, ay, el) {
         .style("text-anchor", "end")
         .text("m"+ay);
 
+    this.cur = this.svg.append("g");
+
     this.dots = this.svg.append("g");
 
     this.ctr = this.svg.append("circle")
@@ -213,6 +215,62 @@ function MagXSPlot(ax, ay, el) {
             .attr("cy", self.y(-d['lActy']/d['kActy']))
             .attr("rx", (self.x((d['n0']-d['lActx'])/d['kActx']) - self.x((-d['n0']-d['lActx'])/d['kActx']))/2)
             .attr("ry", (self.y((-d['n0']-d['lActy'])/d['kActy']) - self.y((d['n0']-d['lActy'])/d['kActy']))/2);
+
+        self.vec
+            .attr("x1", self.x(-d['lx']/d['kx']))
+            .attr("y1", self.y(-d['ly']/d['ky']))
+            .attr("x2", self.x(d['mx']))
+            .attr("y2", self.y(d['my']))
+    };
+
+    this.update_measurement = function(datum) {
+        var d = {
+            'mx': datum['M'+self.ax], 'my': datum['M'+self.ay],
+            'kx': datum['K'+self.ax], 'ky': datum['K'+self.ay],
+            'lx': datum['L'+self.ax], 'ly': datum['L'+self.ay],
+            'n0': datum['N0'], 'sigmaM': datum['sigmaM']
+        };
+
+        var changed = false;
+        if (d['mx']-d['n0']*d['sigmaM'] < self.lLim) {
+            self.lLim = d['mx']-d['n0']*d['sigmaM'];
+            changed = true;
+        }
+        if (d['mx']+d['n0']*d['sigmaM'] > self.rLim) {
+            self.rLim = d['mx']+d['n0']*d['sigmaM'];
+            changed = true;
+        }
+        if (d['my']-d['n0']*d['sigmaM'] < self.bLim) {
+            self.bLim = d['my']-d['n0']*d['sigmaM'];
+            changed = true;
+        }
+        if (d['my']+d['n0']*d['sigmaM'] > self.tLim) {
+            self.tLim = d['my']+d['n0']*d['sigmaM'];
+            changed = true;
+        }
+
+        if (changed) {
+            self.xBuf = Math.max(0, (self.tLim-self.bLim)-(self.rLim-self.lLim))/2;
+            self.yBuf = Math.max(0, (self.rLim-self.lLim)-(self.tLim-self.bLim))/2;
+            self.x.domain([self.lLim-self.xBuf, self.rLim+self.xBuf]);
+            self.xAxis.scale(self.x);
+            self.y.domain([self.bLim-self.yBuf, self.tLim+self.yBuf]);
+            self.yAxis.scale(self.y);
+            self.xAxisLine.attr("transform", "translate(0," + self.y(0) + ")")
+                .call(self.xAxis);
+            self.yAxisLine.attr("transform", "translate(" + self.x(0) + ",0)")
+                .call(self.yAxis);
+        }
+
+        var dcur = self.cur.selectAll('circle').data([d]);
+
+        dcur.enter()
+            .append("circle")
+            .attr("class", "cur")
+            .merge(dcur)
+            .attr("r", (self.x(d['n0']*d['sigmaM'])-self.x(-d['n0']*d['sigmaM']))/2)
+            .attr("cx", function(d) { return self.x(d['mx']); })
+            .attr("cy", function(d) { return self.y(d['my']); });
 
         self.vec
             .attr("x1", self.x(-d['lx']/d['kx']))
