@@ -397,6 +397,7 @@ function calcEllipse(pKK, pLL, pKL) {
 function DThetaPlot(el) {
     var self = this;
     this.el = el;
+    this.tbLim = 1e9;
     this.data={};
 
     this.x = d3.scaleLinear()
@@ -476,21 +477,38 @@ function DThetaPlot(el) {
             'n0': datum['N0']
         };
 
-        var rr = self.thetas.reduce(function(oMax, x) {
-            var y = self.dTheta(x);
-            if (y<-oMax) {
-                oMax = -y;
-            }
-            if (y>oMax) {
-                oMax = y;
-            }
-            return Math.exp(Math.ceil(Math.log(oMax)));
-        }, 0);
+        if (self.tbLim>1) {
+            var rr = self.thetas.reduce(function (oMax, x) {
+                var y = self.dTheta(x);
+                if (y < -oMax) {
+                    oMax = -y;
+                }
+                if (y > oMax) {
+                    oMax = y;
+                }
+                return oMax;
+            }, 0);
 
-        self.y.domain([-rr, rr]);
-        self.yAxis.scale(self.y);
-        self.xAxisLine.attr("transform", "translate(0," + self.y(0) + ")");
-        self.yAxisLine.call(self.yAxis);
+            var changed = false;
+            if (rr<self.tbLim/10) {
+                if (rr > 0.1) {
+                    self.tbLim = 10 * rr;
+                } else {
+                    self.tbLim = 1;
+                }
+                changed = true;
+            }
+            if (rr>self.tbLim*2) {
+                self.tbLim = rr;
+                changed = true;
+            }
+            if (changed) {
+                self.y.domain([-self.tbLim, self.tbLim]);
+                self.yAxis.scale(self.y);
+                self.xAxisLine.attr("transform", "translate(0," + self.y(0) + ")");
+                self.yAxisLine.call(self.yAxis);
+            }
+        }
 
         self.xPath.attr("d", self.xLine);
     }
