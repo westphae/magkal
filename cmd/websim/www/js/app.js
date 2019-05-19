@@ -25,6 +25,7 @@ vm = new Vue({
         params: params,        // Actual parameters currently being used, will be replaced by above when sent to server
         measuring: false,      // Are we measuring continuously?
         connected: false,      // Whether or not the websocket is connected
+        msmts: null,           // Interactive area to select measurement values
         mxs_update: null,      // M cross-section plot
         k1l1_update: null,
         dTheta_update: null,
@@ -42,19 +43,16 @@ vm = new Vue({
         this.ws.addEventListener('close', function() { self.connected = false; });
         this.ws.addEventListener('message', this.handleMessages);
         dispatch.on("measure_request", function(msg) {
-            console.log("received measure_request");
             self.ws.send(
                 JSON.stringify({"measure": msg})
             );
         });
         dispatch.on("estimate_request", function(msg) {
-            console.log("received estimate_request");
             self.ws.send(
                 JSON.stringify({"estimate": msg})
             );
         });
         dispatch.on("measurement", function() {
-            console.log("received measurement");
            dispatch.call("estimate_request", this, {"nn": self.n0 * self.n0})
         });
     },
@@ -118,14 +116,10 @@ vm = new Vue({
             this.ws.send(
                 JSON.stringify(msg)
             );
-            console.log("sent: ");
-            console.log(msg);
         },
         measureOnce: function () {
             var msg = {"a": null};
             dispatch.call("measure_request", this, msg);
-            console.log("measuring once, sent: ");
-            console.log(msg);
         },
         measureMany: function () {
             measureInterval = setInterval(function () {
@@ -133,17 +127,13 @@ vm = new Vue({
                 dispatch.call("measure_request", this, msg);
             }, 50);
             this.measuring = true;
-            console.log("measuring many");
         },
         pause: function () {
             clearInterval(measureInterval);
             this.measuring = false;
-            console.log("pausing");
         },
         handleMessages: function(e) {
             var msg = JSON.parse(e.data);
-            console.log("received:");
-            console.log(msg);
 
             // Handle received params
             if (msg.hasOwnProperty('params') && msg.params!==null) {
@@ -186,6 +176,11 @@ vm = new Vue({
                 this.mxs_update = new MagXSPlot(1, 2, "#m-plot");
                 dispatch.on("estimate.mxs", this.mxs_update.update_state);
                 dispatch.on("measurement.mxs", this.mxs_update.update_measurement);
+                this.msmts = new MagInputArea('#m-plot', this.n, function(d) {
+                    var msg = {"a": d};
+                    dispatch.call("measure_request", self, msg);
+                });
+                dispatch.on("measurement.msmts", this.msmts.update_measurement);
                 this.k1l1_update = new KLPlot("L1", "K1", "#m-plot");
                 dispatch.on("estimate.k1l1", this.k1l1_update.update_state);
                 if (this.n>1) {

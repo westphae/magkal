@@ -18,6 +18,36 @@ svg {
     font: 10px sans-serif;
 }
 
+.sel {
+    stroke: black;
+    stroke-width: 1;
+    touch-action: none;
+}
+
+.sel-bg {
+    fill: #999999;
+    opacity: 0.5;
+    touch-action: none;
+}
+
+.sel-bg-grid {
+    stroke: white;
+    touch-action: none;
+}
+
+.sel-bg-pos {
+    fill: lightgreen;
+    touch-action: none;
+}
+
+.minor {
+    stroke-width: 1;
+}
+
+.major {
+    stroke-width: 2;
+}
+
 .dot {
     stroke-width: 0;
     fill-opacity: 0.1;
