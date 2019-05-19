@@ -6,7 +6,7 @@ import (
 )
 
 type measurement []float64 // A magnetometer measurement like [m1, m2, m3]
-type direction []float64 // Angles pointing in a direction like [theta, phi]
+type direction []float64 // Angles pointing in a direction like [theta, phi], in degrees
 type measurer func(a direction) (m measurement)
 
 // makeRandomMeasurer creates a function that returns a new measurement of m, the magnetometer measurement.
@@ -68,11 +68,11 @@ func makeManualMeasurer(n int, n0 float64, k, l []float64, r float64) measurer {
 		return func(a direction) (m measurement) {
 			var theta float64
 			if a!=nil && len(a)>=1 {
-				theta = a[0]
+				theta = a[0] * math.Pi / 180
 			} else {
-				theta = 2 * math.Pi * (rand.Float64() - 0.5)
+				theta = 2 * math.Pi * rand.Float64()
 			}
-			if theta < 0 {
+			if theta > math.Pi/2 && theta < 3*math.Pi/2 {
 				return []float64{(-n0-l[0])/k[0] + r*rand.NormFloat64()}
 			}
 			return []float64{(n0-l[0])/k[0] + r*rand.NormFloat64()}
@@ -82,9 +82,9 @@ func makeManualMeasurer(n int, n0 float64, k, l []float64, r float64) measurer {
 		return func(a direction) (m measurement) {
 			var theta float64
 			if a!=nil && len(a)>=1 {
-				theta = a[0]
+				theta = a[0] * math.Pi / 180
 			} else {
-				theta = 2 * math.Pi * (rand.Float64() - 0.5)
+				theta = 2 * math.Pi * rand.Float64()
 			}
 			nx := n0 * math.Cos(theta)
 			ny := n0 * math.Sin(theta)
@@ -97,10 +97,10 @@ func makeManualMeasurer(n int, n0 float64, k, l []float64, r float64) measurer {
 	return func(a direction) (m measurement) {
 		var theta, phi float64
 		if a!=nil && len(a)>=2 {
-			theta = a[0]
-			phi = a[1]
+			theta = a[0] * math.Pi / 180
+			phi = a[1] * math.Pi / 180
 		} else {
-			theta = 2 * math.Pi * (rand.Float64() - 0.5)
+			theta = 2 * math.Pi * rand.Float64()
 			phi = math.Acos(2*rand.Float64() - 1)
 		}
 		nx := n0 * math.Cos(theta)*math.Cos(phi)

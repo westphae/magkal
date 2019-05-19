@@ -31,9 +31,9 @@ type params struct {
 
 // Some sensible default parameters to start the user off
 var defaultParams = params{
-	random,2,1.0,
+	manual,2,1.0,
 	&[]float64{0.8, 0.7, 0.9}, &[]float64{0.1, 0.15, -0.1},
-	0.25, 0.01, 0.05,
+	0.25, 0.0009, 0.05,
 }
 
 type measureCmd struct {
@@ -137,7 +137,7 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		cmd           measureCmd
 		myMeasurement measurement
 		myParams = defaultParams
-		myMeasurer = makeRandomMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
+		myMeasurer = makeManualMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
 		myEstimator = kalman.NewKalmanFilter(myParams.N, myParams.N0, myParams.SigmaK0, myParams.SigmaK, myParams.SigmaM)
 	)
 
@@ -180,7 +180,7 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 				myMeasurer = makeRandomMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
 				log.Println("Set Random measurer")
 			default:
-				myMeasurer = makeRandomMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
+				myMeasurer = makeManualMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
 				log.Printf("Received bad source: %d, setting Random measurer\n", myParams.Source)
 				break
 			}
