@@ -128,12 +128,12 @@ function MagXSPlot(ax, ay, el) {
             changed = true;
         }
         self.lLim = self.llLim;
-        if ((-d['n0']-d['lx'])/d['kx'] < self.lLim) {
-            self.lLim = (-d['n0']-d['lx'])/d['kx'];
+        if (-d['n0']/d['kx']+d['lx'] < self.lLim) {
+            self.lLim = -d['n0']/d['kx']+d['lx'];
             changed = true;
         }
-        if ((-d['n0']-d['lActx'])/d['kActx'] < self.lLim) {
-            self.lLim = (-d['n0']-d['lActx'])/d['kActx'];
+        if (-d['n0']/d['kActx']+d['lActx'] < self.lLim) {
+            self.lLim = -d['n0']/d['kActx']+d['lActx'];
             changed = true;
         }
         if (d['mx']+d['n0']*d['sigmaM'] > self.rrLim) {
@@ -141,12 +141,12 @@ function MagXSPlot(ax, ay, el) {
             changed = true;
         }
         self.rLim = self.rrLim;
-        if ((d['n0']-d['lx'])/d['kx'] > self.rLim) {
-            self.rLim = (d['n0']-d['lx'])/d['kx'];
+        if (d['n0']/d['kx']+d['lx'] > self.rLim) {
+            self.rLim = d['n0']/d['kx']+d['lx'];
             changed = true;
         }
-        if ((d['n0']-d['lActx'])/d['kActx'] > self.rLim) {
-            self.rLim = (d['n0']-d['lActx'])/d['kActx'];
+        if (d['n0']/d['kActx']+d['lActx'] > self.rLim) {
+            self.rLim = d['n0']/d['kActx']+d['lActx'];
             changed = true;
         }
         if (d['my']-d['n0']*d['sigmaM'] < self.bbLim) {
@@ -154,12 +154,12 @@ function MagXSPlot(ax, ay, el) {
             changed = true;
         }
         self.bLim = self.bbLim;
-        if ((-d['n0']-d['ly'])/d['ky'] < self.bLim) {
-            self.bLim = (-d['n0']-d['ly'])/d['ky'];
+        if (-d['n0']/d['ky']+d['ly'] < self.bLim) {
+            self.bLim = -d['n0']/d['ky']+d['ly'];
             changed = true;
         }
-        if ((-d['n0']-d['lActy'])/d['kActy'] < self.bLim) {
-            self.bLim = (-d['n0']-d['lActy'])/d['kActy'];
+        if (-d['n0']/d['kActy']+d['lActy'] < self.bLim) {
+            self.bLim = -d['n0']/d['kActy']+d['lActy'];
             changed = true;
         }
         if (d['my']+d['n0']*d['sigmaM'] > self.ttLim) {
@@ -167,12 +167,12 @@ function MagXSPlot(ax, ay, el) {
             changed = true;
         }
         self.tLim = self.ttLim;
-        if ((d['n0']-d['ly'])/d['ky'] > self.tLim) {
-            self.tLim = (d['n0']-d['ly'])/d['ky'];
+        if (d['n0']/d['ky']+d['ly'] > self.tLim) {
+            self.tLim = d['n0']/d['ky']+d['ly'];
             changed = true;
         }
-        if ((d['n0']-d['lActy'])/d['kActy'] > self.tLim) {
-            self.tLim = (d['n0']-d['lActy'])/d['kActy'];
+        if (d['n0']/d['kActy']+d['lActy'] > self.tLim) {
+            self.tLim = d['n0']/d['kActy']+d['lActy'];
             changed = true;
         }
 
@@ -200,25 +200,25 @@ function MagXSPlot(ax, ay, el) {
 
         ddots.exit().remove();
 
-        self.ctr.attr("cx", self.x(-d['lx']/d['kx']))
-            .attr("cy", self.y(-d['ly']/d['ky']));
+        self.ctr.attr("cx", self.x(d['lx']))
+            .attr("cy", self.y(d['ly']));
 
-        self.ctrAct.attr("cx", self.x(-d['lActx']/d['kActx']))
-            .attr("cy", self.y(-d['lActy']/d['kActy']));
+        self.ctrAct.attr("cx", self.x(d['lActx']))
+            .attr("cy", self.y(d['lActy']));
 
-        self.crc.attr("cx", self.x(-d['lx']/d['kx']))
-            .attr("cy", self.y(-d['ly']/d['ky']))
-            .attr("rx", (self.x((d['n0']-d['lx'])/d['kx']) - self.x((-d['n0']-d['lx'])/d['kx']))/2)
-            .attr("ry", (self.y((-d['n0']-d['ly'])/d['ky']) - self.y((d['n0']-d['ly'])/d['ky']))/2);
+        self.crc.attr("cx", self.x(d['lx']))
+            .attr("cy", self.y(d['ly']))
+            .attr("rx", (self.x(d['n0']/d['kx']+d['lx']) - self.x(-d['n0']/d['kx']+d['lx']))/2)
+            .attr("ry", (self.y(-d['n0']/d['ky']+d['ly']) - self.y(d['n0']/d['ky']+d['ly']))/2);
 
-        self.crcAct.attr("cx", self.x(-d['lActx']/d['kActx']))
-            .attr("cy", self.y(-d['lActy']/d['kActy']))
-            .attr("rx", (self.x((d['n0']-d['lActx'])/d['kActx']) - self.x((-d['n0']-d['lActx'])/d['kActx']))/2)
-            .attr("ry", (self.y((-d['n0']-d['lActy'])/d['kActy']) - self.y((d['n0']-d['lActy'])/d['kActy']))/2);
+        self.crcAct.attr("cx", self.x(d['lActx']))
+            .attr("cy", self.y(d['lActy']))
+            .attr("rx", (self.x(d['n0']/d['kActx']+d['lActx']) - self.x(-d['n0']/d['kActx']+d['lActx']))/2)
+            .attr("ry", (self.y(-d['n0']/d['kActy']+d['lActy']) - self.y(d['n0']/d['kActy']+d['lActy']))/2);
 
         self.vec
-            .attr("x1", self.x(-d['lx']/d['kx']))
-            .attr("y1", self.y(-d['ly']/d['ky']))
+            .attr("x1", self.x(d['lx']))
+            .attr("y1", self.y(d['ly']))
             .attr("x2", self.x(d['mx']))
             .attr("y2", self.y(d['my']))
     };
@@ -273,8 +273,8 @@ function MagXSPlot(ax, ay, el) {
             .attr("cy", function(d) { return self.y(d['my']); });
 
         self.vec
-            .attr("x1", self.x(-d['lx']/d['kx']))
-            .attr("y1", self.y(-d['ly']/d['ky']))
+            .attr("x1", self.x(d['lx']))
+            .attr("y1", self.y(d['ly']))
             .attr("x2", self.x(d['mx']))
             .attr("y2", self.y(d['my']))
     }
@@ -504,8 +504,8 @@ function DThetaPlot(el) {
 
     this.dTheta = function(theta) {
         var dTheta = Math.atan2(
-            self.data["ky"]/self.data["kActy"]*(self.data["n0"]*Math.sin(theta*Math.PI/180)-self.data["lActy"])+self.data["ly"],
-            self.data["kx"]/self.data["kActx"]*(self.data["n0"]*Math.cos(theta*Math.PI/180)-self.data["lActx"])+self.data["lx"]
+            self.data["ky"]*(self.data["n0"]*Math.sin(theta*Math.PI/180)/self.data["kActy"]+self.data["lActy"]-self.data["ly"]),
+            self.data["kx"]*(self.data["n0"]*Math.cos(theta*Math.PI/180)/self.data["kActx"]+self.data["lActx"]-self.data["lx"])
         )*180/Math.PI-theta;
         if (dTheta<-180) {
             dTheta += 360;

@@ -23,9 +23,9 @@ func makeRandomMeasurer(n int, n0 float64, k, l []float64, r float64) measurer {
 			return func(a direction) (m measurement) {
 			theta := 2 * math.Pi * (rand.Float64() - 0.5)
 			if theta < 0 {
-				return []float64{(-n0-l[0])/k[0] + r*rand.NormFloat64()}
+				return []float64{-n0/k[0]+l[0] + r*rand.NormFloat64()}
 			}
-			return []float64{(n0-l[0])/k[0] + r*rand.NormFloat64()}
+			return []float64{n0/k[0]+l[0] + r*rand.NormFloat64()}
 		}
 	}
 	if n == 2 {
@@ -34,8 +34,8 @@ func makeRandomMeasurer(n int, n0 float64, k, l []float64, r float64) measurer {
 			nx := n0 * math.Cos(theta)
 			ny := n0 * math.Sin(theta)
 			return []float64{
-				(nx-l[0])/k[0] + r*rand.NormFloat64(),
-				(ny-l[1])/k[1] + r*rand.NormFloat64(),
+				nx/k[0]+l[0] + r*rand.NormFloat64(),
+				ny/k[1]+l[1] + r*rand.NormFloat64(),
 			}
 		}
 	}
@@ -46,9 +46,9 @@ func makeRandomMeasurer(n int, n0 float64, k, l []float64, r float64) measurer {
 		ny := n0 * math.Sin(theta)*math.Cos(phi)
 		nz := n0 * math.Sin(phi)
 		return []float64{
-			(nx-l[0])/k[0] + r*rand.NormFloat64(),
-			(ny-l[1])/k[1] + r*rand.NormFloat64(),
-			(nz-l[2])/k[2] + r*rand.NormFloat64(),
+			nx/k[0]+l[0] + r*rand.NormFloat64(),
+			ny/k[1]+l[1] + r*rand.NormFloat64(),
+			nz/k[2]+l[2] + r*rand.NormFloat64(),
 		}
 	}
 }
@@ -73,9 +73,9 @@ func makeManualMeasurer(n int, n0 float64, k, l []float64, r float64) measurer {
 				theta = 2 * math.Pi * rand.Float64()
 			}
 			if theta > math.Pi/2 && theta < 3*math.Pi/2 {
-				return []float64{(-n0-l[0])/k[0] + r*rand.NormFloat64()}
+				return []float64{-n0/k[0]+l[0] + r*rand.NormFloat64()}
 			}
-			return []float64{(n0-l[0])/k[0] + r*rand.NormFloat64()}
+			return []float64{n0/k[0]+l[0] + r*rand.NormFloat64()}
 		}
 	}
 	if n == 2 {
@@ -89,8 +89,8 @@ func makeManualMeasurer(n int, n0 float64, k, l []float64, r float64) measurer {
 			nx := n0 * math.Cos(theta)
 			ny := n0 * math.Sin(theta)
 			return []float64{
-				(nx-l[0])/k[0] + r*rand.NormFloat64(),
-				(ny-l[1])/k[1] + r*rand.NormFloat64(),
+				nx/k[0]+l[0] + r*rand.NormFloat64(),
+				ny/k[1]+l[1] + r*rand.NormFloat64(),
 			}
 		}
 	}
@@ -107,9 +107,9 @@ func makeManualMeasurer(n int, n0 float64, k, l []float64, r float64) measurer {
 		ny := n0 * math.Sin(theta)*math.Cos(phi)
 		nz := n0 * math.Sin(phi)
 		return []float64{
-			(nx-l[0])/k[0] + r*rand.NormFloat64(),
-			(ny-l[1])/k[1] + r*rand.NormFloat64(),
-			(nz-l[2])/k[2] + r*rand.NormFloat64(),
+			nx/k[0]+l[0] + r*rand.NormFloat64(),
+			ny/k[1]+l[1] + r*rand.NormFloat64(),
+			nz/k[2]+l[2] + r*rand.NormFloat64(),
 		}
 	}
 }

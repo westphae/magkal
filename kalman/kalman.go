@@ -91,8 +91,9 @@ func (k *Filter) runFilter() {
 
 			// Calculate Jacobian
 			for i:=0; i<k.n; i++ {
-				h[0][2*i] = 2*nHat[i][0]*k.u[i]
-				h[0][2*i+1] = 2 * nHat[i][0]
+				h[0][2*i] = 2*nHat[i][0]*nHat[i][0]/k.x[2*i][0]
+				h[0][2*i+1] = -2*nHat[i][0]*k.x[2*i][0]
+
 			}
 
 			// Calculate S
@@ -113,7 +114,7 @@ func (k *Filter) runFilter() {
 func calcMagField(x [][]float64, u []float64) (n [][]float64) {
 	n = make([][]float64, len(u))
 	for i:=0; i<len(u); i++ {
-		n[i] = []float64{x[2*i][0]*u[i] + x[2*i+1][0]}
+		n[i] = []float64{x[2*i][0]*(u[i] - x[2*i+1][0])}
 	}
 	return n
 }
