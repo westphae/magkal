@@ -87,7 +87,7 @@
             </div>
             <div class="row">
                 <div class="input-field col s12">
-                    <button class="btn col s3" @click="restart()" v-if="check_params_changed()">Restart</button>
+                    <button class="btn col s3" @click="restart()">Restart</button>
                     <button class="btn col s3" @click="measureMany()" v-if="!check_params_changed() && source==1 && !measuring">Measure Many</button>
                     <button class="btn col s3" @click="measureOnce()" v-if="!check_params_changed() && source==1 && !measuring">Measure Once</button>
                     <button class="btn col s3" @click="pause()" v-if="!check_params_changed() && source==1 && measuring">Pause</button>

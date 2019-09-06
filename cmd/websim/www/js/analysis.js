@@ -548,9 +548,9 @@ function DThetaPlot(el) {
             }, 0);
 
             var changed = false;
-            if (rr<self.tbLim/10) {
-                if (rr > 0.1) {
-                    self.tbLim = 10 * rr;
+            if (rr<self.tbLim/2) {
+                if (rr > 0.5) {
+                    self.tbLim = 2 * rr;
                 } else {
                     self.tbLim = 1;
                 }

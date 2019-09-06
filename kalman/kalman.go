@@ -1,5 +1,7 @@
 package kalman
 
+const EPS = 0.1 // Correction factor since KF is nonlinear
+
 type Filter struct {
 	n int              // Number of dimensions
 	x [][]float64      // Kalman Filter hidden state
@@ -97,7 +99,7 @@ func (k *Filter) runFilter() {
 			s = matAdd(k.r, matMul(h, matMul(k.p, matTranspose(h))))
 
 			// Kalman Gain
-			kk = matSMul(1/s[0][0], matMul(k.p, matTranspose(h)))
+			kk = matSMul(EPS/s[0][0], matMul(k.p, matTranspose(h)))
 
 			// State correction
 			k.x = matAdd(k.x, matSMul(y, kk))
