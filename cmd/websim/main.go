@@ -137,7 +137,7 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		cmd           measureCmd
 		myMeasurement measurement
 		myParams = defaultParams
-		myMeasurer = makeManualMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
+		myMeasurer, _ = makeManualMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
 		myEstimator = kalman.NewKalmanFilter(myParams.N, myParams.N0, myParams.SigmaK0, myParams.SigmaK, myParams.SigmaM)
 	)
 
@@ -174,14 +174,21 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 
 			switch myParams.Source {
 			case manual:
-				myMeasurer = makeManualMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
+				myMeasurer, _ = makeManualMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
 				log.Println("Set Manual measurer")
 			case random:
-				myMeasurer = makeRandomMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
+				myMeasurer, _ = makeRandomMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
 				log.Println("Set Random measurer")
+			case actual:
+				myParams.N = 3
+				myMeasurer, err = makeActualMeasurer()
+				if err!=nil {
+					log.Printf("Error connecting to MPU: %s, setting Random measurer\n", err)
+					myMeasurer, _ = makeManualMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
+				}
 			default:
-				myMeasurer = makeManualMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
-				log.Printf("Received bad source: %d, setting Random measurer\n", myParams.Source)
+				myMeasurer, _ = makeManualMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
+				log.Printf("Received bad source: %d, setting Manual measurer\n", myParams.Source)
 				break
 			}
 

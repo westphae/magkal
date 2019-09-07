@@ -3,6 +3,8 @@ package main
 import (
 	"math"
 	"math/rand"
+
+	"github.com/westphae/goflying/mpu9250"
 )
 
 type measurement []float64 // A magnetometer measurement like [m1, m2, m3]
@@ -16,9 +18,9 @@ type measurer func(a direction) (m measurement)
 //   k: n-vector of the scaling factors
 //   l: n-vector of the additive factors
 //   r: noise level
-//   equations is n = k*m + l
+//   equation is n = k*(m-l)
 // The returned function takes a rough measurement just to satisfy the interface, but doesn't use it.
-func makeRandomMeasurer(n int, n0 float64, k, l []float64, r float64) measurer {
+func makeRandomMeasurer(n int, n0 float64, k, l []float64, r float64) (m measurer, err error) {
 	if n == 1 {
 			return func(a direction) (m measurement) {
 			theta := 2 * math.Pi * (rand.Float64() - 0.5)
@@ -26,7 +28,7 @@ func makeRandomMeasurer(n int, n0 float64, k, l []float64, r float64) measurer {
 				return []float64{-n0/k[0]+l[0] + r*rand.NormFloat64()}
 			}
 			return []float64{n0/k[0]+l[0] + r*rand.NormFloat64()}
-		}
+		}, nil
 	}
 	if n == 2 {
 		return func(a direction) (m measurement) {
@@ -37,7 +39,7 @@ func makeRandomMeasurer(n int, n0 float64, k, l []float64, r float64) measurer {
 				nx/k[0]+l[0] + r*rand.NormFloat64(),
 				ny/k[1]+l[1] + r*rand.NormFloat64(),
 			}
-		}
+		}, nil
 	}
 	return func(a direction) (m measurement) {
 		theta := 2 * math.Pi * (rand.Float64() - 0.5)
@@ -50,7 +52,7 @@ func makeRandomMeasurer(n int, n0 float64, k, l []float64, r float64) measurer {
 			ny/k[1]+l[1] + r*rand.NormFloat64(),
 			nz/k[2]+l[2] + r*rand.NormFloat64(),
 		}
-	}
+	}, nil
 }
 
 // makeManualMeasurer creates a function that returns a new measurement of m, the magnetometer measurement.
@@ -60,10 +62,10 @@ func makeRandomMeasurer(n int, n0 float64, k, l []float64, r float64) measurer {
 //   k: n-vector of the scaling factors
 //   l: n-vector of the additive factors
 //   r: noise level
-//   equations is n = k*m + l
+//   equation is n = k*(m-l)
 // The returned function takes a rough measurement and computes the corresponding angles, then computes
 //   a corrected measurement including noise.
-func makeManualMeasurer(n int, n0 float64, k, l []float64, r float64) measurer {
+func makeManualMeasurer(n int, n0 float64, k, l []float64, r float64) (m measurer, err error) {
 	if n == 1 {
 		return func(a direction) (m measurement) {
 			var theta float64
@@ -76,7 +78,7 @@ func makeManualMeasurer(n int, n0 float64, k, l []float64, r float64) measurer {
 				return []float64{-n0/k[0]+l[0] + r*rand.NormFloat64()}
 			}
 			return []float64{n0/k[0]+l[0] + r*rand.NormFloat64()}
-		}
+		}, nil
 	}
 	if n == 2 {
 		return func(a direction) (m measurement) {
@@ -92,7 +94,7 @@ func makeManualMeasurer(n int, n0 float64, k, l []float64, r float64) measurer {
 				nx/k[0]+l[0] + r*rand.NormFloat64(),
 				ny/k[1]+l[1] + r*rand.NormFloat64(),
 			}
-		}
+		}, nil
 	}
 	return func(a direction) (m measurement) {
 		var theta, phi float64
@@ -111,5 +113,24 @@ func makeManualMeasurer(n int, n0 float64, k, l []float64, r float64) measurer {
 			ny/k[1]+l[1] + r*rand.NormFloat64(),
 			nz/k[2]+l[2] + r*rand.NormFloat64(),
 		}
+	}, nil
+}
+
+// makeActualMeasurer creates a function that returns a new measurement of m, the magnetometer measurement.
+// Inputs:
+//   r: noise level
+// The returned function takes a rough measurement just to satisfy the interface, but doesn't use it.
+func makeActualMeasurer() (m measurer, err error) {
+	mpu, err := mpu9250.NewMPU9250(250, 4, 50, true, false)
+	if err != nil {
+		return nil, err
 	}
+	// defer mpu.CloseMPU() // This really should be closed. Move into goroutine.
+
+	var data *mpu9250.MPUData
+
+	return func(a direction) (m measurement) {
+		data = <- mpu.C
+		return []float64{data.M1, data.M2, data.M3}
+	}, nil
 }
