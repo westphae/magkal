@@ -294,6 +294,8 @@ function KLPlot(ax, ay, el) {
     this.rLim=0;
     this.tLim=0;
     this.bLim=0;
+    this.rescaleX = false;
+    this.rescaleY = false;
     this.xBuf = 0;
     this.yBuf = 0;
 
@@ -303,13 +305,19 @@ function KLPlot(ax, ay, el) {
             this.col = "Blue";
             this.lLim = 0;
             this.bLim = 0;
+            this.rescaleX = false;
+            this.rescaleY = false;
             break;
         case 'LK':
             this.col = "Green";
             this.bLim = 0;
+            this.rescaleX = true;
+            this.rescaleY = false;
             break;
         case 'LL':
             this.col = "Red";
+            this.rescaleX = true;
+            this.rescaleY = true;
     }
 
     this.x = d3.scaleLinear()
@@ -373,9 +381,13 @@ function KLPlot(ax, ay, el) {
 
     this.update_state = function(datum) {
         var d = {
-            'x': datum[self.ax], 'y': datum[self.ay],
-            'Actx': datum[self.ax[0]+'Act'+self.ax[1]], 'Acty': datum[self.ay[0]+'Act'+self.ay[1]],
-            'Pxx': datum['P'+self.ax+self.ax], 'Pxy': datum['P'+self.ax+self.ay], 'Pyy': datum['P'+self.ay+self.ay],
+            'x': datum[self.ax] / (self.rescaleX ? datum['N0'] : 1),
+            'y': datum[self.ay] / (self.rescaleY ? datum['N0'] : 1),
+            'Actx': datum[self.ax[0]+'Act'+self.ax[1]] / (self.rescaleX ? datum['N0'] : 1),
+            'Acty': datum[self.ay[0]+'Act'+self.ay[1]] / (self.rescaleY ? datum['N0'] : 1),
+            'Pxx': datum['P'+self.ax+self.ax] / (self.rescaleX ? datum['N0'] : 1)**2,
+            'Pxy': datum['P'+self.ax+self.ay] / (self.rescaleX ? datum['N0'] : 1) / (self.rescaleY ? datum['N0'] : 1),
+            'Pyy': datum['P'+self.ay+self.ay] / (self.rescaleY ? datum['N0'] : 1)**2,
             'n0': datum['N0'], 'sigmaM': datum['sigmaM']
         };
 
