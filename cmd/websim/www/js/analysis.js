@@ -18,18 +18,6 @@ function MagXSPlot(ax, ay, el) {
     this.yBuf = 0;
     this.data=[];
 
-    this.col = "Black";
-    switch (this.ax+this.ay) {
-        case 3:
-            this.col = "Blue";
-            break;
-        case 4:
-            this.col = "Green";
-            break;
-        case 5:
-            this.col = "Red";
-    }
-
     this.x = d3.scaleLinear()
         .domain([this.llLim, this.rrLim])
         .range([0, width-margin.left-margin.right]);
@@ -191,10 +179,15 @@ function MagXSPlot(ax, ay, el) {
                 .attr("cy", function(d) { return self.y(d['my']); });
         }
 
+        var dnn = Math.max(-1, Math.min(1, (Math.sqrt(
+       	        (datum["K1"]*(datum["M1"]-datum["L1"]))**2 +
+                (datum["K2"]*(datum["M2"]-datum["L2"]))**2 +
+                (datum["K3"]*(datum["M3"]-datum["L3"]))**2)/datum["N0"]
+                - 1)/(5*datum["sigmaM"])))
         ddots.enter().append("circle")
             .attr("class", "dot")
             .attr("r", (self.x(d['n0']*d['sigmaM'])-self.x(-d['n0']*d['sigmaM']))/2)
-            .style("fill", self.col)
+            .style("fill", "rgb("+255*(0.5+dnn)+", 0, "+255*(0.5-dnn)+")")
             .attr("cx", function(d) { return self.x(d['mx']); })
             .attr("cy", function(d) { return self.y(d['my']); });
 
