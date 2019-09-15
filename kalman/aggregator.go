@@ -39,7 +39,8 @@ type MeasureGrid struct {
 	N            int
 }
 
-func NewMeasureGrid(nTheta int) (g *MeasureGrid) {
+func NewMeasureGrid(nTheta int) (g MeasureGrid) {
+	g = MeasureGrid{}
 	fnTheta := float64(nTheta)
 	g.Thetas = make([]float64, nTheta)
 	g.Phis = make([][]float64, nTheta)
@@ -53,7 +54,7 @@ func NewMeasureGrid(nTheta int) (g *MeasureGrid) {
 		g.Phis[i] = make([]float64, nPhi)
 		g.measurements[i] = make([]MeasureAgg, nPhi)
 		for j:=0; j<nPhi; j++ {
-			g.Phis[i][j] = 2*math.Pi*(float64(i)+0.5)/float64(nPhi)
+			g.Phis[i][j] = 2*math.Pi*(float64(j)+0.5)/float64(nPhi)
 		}
 	}
 	return g
