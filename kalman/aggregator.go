@@ -37,6 +37,7 @@ type MeasureGrid struct {
 	Thetas       []float64
 	Phis         [][]float64
 	N            int
+	Size         int
 }
 
 func NewMeasureGrid(nTheta int) (g MeasureGrid) {
@@ -56,6 +57,7 @@ func NewMeasureGrid(nTheta int) (g MeasureGrid) {
 		for j:=0; j<nPhi; j++ {
 			g.Phis[i][j] = 2*math.Pi*(float64(j)+0.5)/float64(nPhi)
 		}
+		g.Size += nPhi
 	}
 	return g
 }
@@ -72,7 +74,7 @@ func (g *MeasureGrid) Add(m0, m1, m2 float64) {
 }
 
 func (g MeasureGrid) Ns() (c []float64) {
-	c = make([]float64, g.N)
+	c = make([]float64, g.Size)
 	n := 0
 	for i:=0; i<len(g.Thetas); i++ {
 		for j:=0; j<len(g.Phis[i]); j++ {
@@ -84,40 +86,49 @@ func (g MeasureGrid) Ns() (c []float64) {
 }
 
 func (g MeasureGrid) Averages() (m [][]float64) {
-	m = make([][]float64, g.N)
+	m = make([][]float64, g.Size)
 	n := 0
 	for i:=0; i<len(g.Thetas); i++ {
 		for j:=0; j<len(g.Phis[i]); j++ {
 			m[n] = []float64{g.measurements[i][j].M0, g.measurements[i][j].M1, g.measurements[i][j].M2}
 			n += 1
+			if g.measurements[i][j].N==0 {
+				m[n] = []float64{math.NaN(), math.NaN(), math.NaN()}
+			}
 		}
 	}
 	return m
 }
 
 func (g MeasureGrid) StDevs() (s []float64) {
-	s = make([]float64, g.N)
+	s = make([]float64, g.Size)
 	n := 0
 	for i:=0; i<len(g.Thetas); i++ {
 		for j:=0; j<len(g.Phis[i]); j++ {
 			s[n] = g.measurements[i][j].SS
 			n += 1
+			if g.measurements[i][j].N==0 {
+				s[n] = math.NaN()
+			}
 		}
 	}
 	return s
 }
 
 func (g MeasureGrid) CalculatedField(k, l []float64) (f [][]float64) {
-	f = make([][]float64, g.N)
+	f = make([][]float64, g.Size)
 	m := g.Averages()
 	for i:=0; i<len(m); i++ {
 		f[i] = []float64{k[0]*(m[i][0]-l[0]), k[1]*(m[i][1]-l[1]), k[2]*(m[i][2]-l[2])}
+			if g.measurements[i][j].N==0 {
+				f[n] = []float64{math.NaN(), math.NaN(), math.NaN()}
+			}
 	}
 	return f
 }
 
 func (g MeasureGrid) CalculatedFieldStrength2(k, l []float64) (s []float64) {
-	s = make([]float64, g.N)
+	s = make([]float64, g.Size)
 	m := g.Averages()
 	for i:=0; i<len(m); i++ {
 		s[i] = (k[0]*(m[i][0]-l[0]))*(k[0]*(m[i][0]-l[0])) +

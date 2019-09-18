@@ -42,6 +42,7 @@ func TestGridShape(t *testing.T) {
 	var (
 		theta0, dTheta float64
 		phi0, dPhi     float64
+		size           int
 	)
 	ns := []int{6}
 	for _, nTheta := range ns {
@@ -62,12 +63,14 @@ func TestGridShape(t *testing.T) {
 			}
 			dTheta = theta-theta0
 			theta0 = theta
+			size += len(g.Phis[i])
 		}
+		testDiff("size", float64(size), float64(g.Size), eps, t)
 	}
 }
 
 func TestGridAreas(t *testing.T) {
-	ns := []int{6}
+	ns := []int{2, 4, 6}
 
 	var (
 		theta0, theta1 float64
@@ -77,10 +80,11 @@ func TestGridAreas(t *testing.T) {
 
 	for _, nTheta := range ns {
 		g := NewMeasureGrid(nTheta)
-		for i:=0; i<nTheta; i++ {
+		nPatches = 0
+		for i:=0; i<len(g.Phis); i++ {
 			nPatches += len(g.Phis[i])
 		}
-		patchSize := 8*math.Pi*math.Pi/float64(nPatches)
+		patchSize := 4*math.Pi/float64(nPatches)
 
 		for i, theta := range g.Thetas {
 			if i==0 {
@@ -108,9 +112,9 @@ func TestGridAreas(t *testing.T) {
 
 				testDiff(
 					fmt.Sprintf("Area(%d,%d)", i, j),
-					2*math.Pi*(math.Sin(theta1)-math.Sin(theta0))*(phi1-phi0),
+					(math.Sin(theta1)-math.Sin(theta0))*(phi1-phi0),
 					patchSize,
-					0.1*patchSize, t)
+					0.25*patchSize, t)
 			}
 		}
 	}
@@ -123,4 +127,3 @@ type MeasureGrid struct {
 	Phis         [][]float64
 	N            int
 }
-*/
