@@ -3,6 +3,7 @@ package kalman
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"testing"
 )
 
@@ -71,6 +72,7 @@ func TestGridShape(t *testing.T) {
 
 func TestGridAreas(t *testing.T) {
 	ns := []int{2, 4, 6}
+	//ns := []int{2, 3, 4, 5, 6, 12}
 
 	var (
 		theta0, theta1 float64
@@ -120,10 +122,136 @@ func TestGridAreas(t *testing.T) {
 	}
 }
 
-/*
-type MeasureGrid struct {
-	measurements [][]MeasureAgg
-	Thetas       []float64
-	Phis         [][]float64
-	N            int
+func TestGridNsRandom(t *testing.T) {
+	r := rand.New(rand.NewSource(99))
+	for j:=0; j<1; j++ {
+		nTheta := r.Intn(100)
+		g := NewMeasureGrid(nTheta)
+		ns := make([][]int, nTheta)
+		for i:=0; i<nTheta; i++ {
+			ns[i] = make([]int, len(g.Phis[i]))
+		}
+		for i:=0; i<r.Intn(1000); i++ {
+			ti := r.Intn(len(g.Thetas))
+			si := r.Intn(len(g.Phis[ti]))
+			m0 := math.Cos(g.Thetas[ti])*math.Cos(g.Phis[ti][si])
+			m1 := math.Cos(g.Thetas[ti])*math.Sin(g.Phis[ti][si])
+			m2 := math.Sin(g.Thetas[ti])
+			g.Add(m0, m1, m2)
+			ns[ti][si] += 1
+		}
+		c := g.Ns()
+		for i, d := range c {
+			for j, _ := range d {
+				testDiff(fmt.Sprintf("(%d,%d)", i, j), float64(c[i][j]), float64(ns[i][j]), 0.5, t)
+			}
+		}
+	}
+}
+
+func makeTestGrid() (g MeasureGrid, ns [][]int, avgs [][][]float64, stds [][]float64){
+	ms := [][]float64{[]float64{11000,18000,9500},[]float64{10200,17100,8001}}
+	dTheta := math.Pi/3
+
+	g = NewMeasureGrid(len(ns))
+	ns = [][]int{[]int{12,8,16},[]int{22,6,14}}
+	avgs = make([][][]float64, len(ns))
+	stds = make([][]float64, len(ns))
+	var m0, m1, m2, jj, s float64
+	for i:=0; i<2; i++ {
+		ns[i] = make([]int, len(ns[i]))
+		avgs[i] = make([][]float64, len(ns[i]))
+		stds[i] = make([]float64, len(ns[i]))
+		for j:=0; j<3; j++ {
+			jj = float64(2*j+1)
+			m0 = ms[i][j]*math.Cos(jj*dTheta)*math.Cos(dTheta)
+			m1 = ms[i][j]*math.Cos(jj*dTheta)*math.Cos(dTheta)
+			m2 = ms[i][j]*math.Cos(jj*dTheta)*math.Cos(dTheta)
+			s = 1
+			for k:=0; k<ns[i][j]; k++ {
+				g.Add((1+0.1*s)*m0, (1+0.1*s)*m1, (1+0.1*s)*m2)
+				s = -s
+			}
+			avgs[i][j] = []float64{m0, m1, m2}
+			stds[i][j] = 0.1*ms[i][j]
+		}
+	}
+
+	return g, ns, avgs, stds
+}
+
+func TestGridNs(t *testing.T) {
+	g, ns, _, _ := makeTestGrid()
+	for i, f := range g.Ns() {
+		for j, a := range f {
+			testDiff(fmt.Sprintf("(%d,%d) N", i, j), float64(a), float64(ns[i][j]), eps, t)
+		}
+	}
+}
+
+func TestGridAverages(t *testing.T) {
+	g, _, avgs, _ := makeTestGrid()
+	for i, f := range g.Averages() {
+		for j, a := range f {
+			testDiff(fmt.Sprintf("(%d,%d) Average m0", i, j), a[0], avgs[i][j][0], eps, t)
+			testDiff(fmt.Sprintf("(%d,%d) Average m1", i, j), a[1], avgs[i][j][1], eps, t)
+			testDiff(fmt.Sprintf("(%d,%d) Average m2", i, j), a[2], avgs[i][j][2], eps, t)
+		}
+	}
+}
+
+func TestGridStDevs(t *testing.T) {
+	g, _, _, stds := makeTestGrid()
+	for i, f := range g.StDevs() {
+		for j, a := range f {
+			testDiff(fmt.Sprintf("(%d,%d) Std", i, j), a, stds[i][j], eps, t)
+		}
+	}
+}
+
+func TestGridCalculatedFieldStrength2s(t *testing.T) {
+	k := []float64{0.8, 0.6, 0.7}
+	l := []float64{4180, -2660, 250}
+	nn := 40000.0
+	g := NewMeasureGrid(2)
+	var n0, n1, n2 float64
+	for i, theta := range g.Thetas {
+		for _, phi := range g.Phis[i] {
+			n0 = nn*math.Cos(theta)*math.Cos(phi)
+			n1 = nn*math.Cos(theta)*math.Sin(phi)
+			n2 = nn*math.Sin(theta)
+			g.Add(n0/k[0]+l[0], n1/k[1]+l[1], n2/k[2]+l[2])
+		}
+	}
+	for i, e := range g.CalculatedFieldStrength2(k, l) {
+		for j, f := range e {
+			testDiff(fmt.Sprintf("(%d,%d) FieldStrength**2", i, j), f, nn*nn, eps, t)
+		}
+	}
+}
+
+func TestGridCalculatedFieldStrengths(t *testing.T) {
+	k := []float64{0.8, 0.6, 0.7}
+	l := []float64{4180, -2660, 250}
+	nn := 40000.0
+	g := NewMeasureGrid(2)
+	n := make([][][]float64, len(g.Phis))
+	for i, theta := range g.Thetas {
+		n[i] = make([][]float64, len(g.Phis[i]))
+		for j, phi := range g.Phis[i] {
+			n[i][j] = []float64{
+				nn*math.Cos(theta)*math.Cos(phi),
+				nn*math.Cos(theta)*math.Sin(phi),
+				nn*math.Sin(theta),
+			}
+			g.Add(n[i][j][0]/k[0]+l[0], n[i][j][1]/k[1]+l[1], n[i][j][2]/k[2]+l[2])
+		}
+	}
+	for i, e := range g.CalculatedField(k, l) {
+		for j, f := range e {
+			for l:=0; l<3; l++ {
+				testDiff(fmt.Sprintf("(%d,%d) Field%d", i, j, l), f[l], n[i][j][l], eps, t)
+			}
+		}
+	}
 }
