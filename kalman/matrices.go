@@ -1,8 +1,8 @@
 package kalman
 
-func matAdd(a, b [][]float64) (x[][]float64) {
+func matAdd(a, b [][]float64) (x [][]float64) {
 	x = make([][]float64, len(a))
-	for i:=0; i<len(a); i++ {
+	for i := 0; i < len(a); i++ {
 		x[i] = make([]float64, len(a[0]))
 		for j := 0; j < len(b[0]); j++ {
 			x[i][j] = a[i][j] + b[i][j]
@@ -13,10 +13,10 @@ func matAdd(a, b [][]float64) (x[][]float64) {
 
 func matSMul(k float64, a [][]float64) (x [][]float64) {
 	x = make([][]float64, len(a))
-	for i:=0; i<len(a); i++ {
+	for i := 0; i < len(a); i++ {
 		x[i] = make([]float64, len(a[0]))
-		for j:=0; j<len(a[0]); j++ {
-			x[i][j] = k*a[i][j]
+		for j := 0; j < len(a[0]); j++ {
+			x[i][j] = k * a[i][j]
 		}
 	}
 	return x
@@ -24,11 +24,11 @@ func matSMul(k float64, a [][]float64) (x [][]float64) {
 
 func matMul(a, b [][]float64) (x [][]float64) {
 	x = make([][]float64, len(a))
-	for i:=0; i<len(a); i++ {
+	for i := 0; i < len(a); i++ {
 		x[i] = make([]float64, len(b[0]))
-		for j:=0; j<len(b[0]); j++ {
-			for k:=0; k<len(b); k++ {
-				x[i][j] += a[i][k]*b[k][j]
+		for j := 0; j < len(b[0]); j++ {
+			for k := 0; k < len(b); k++ {
+				x[i][j] += a[i][k] * b[k][j]
 			}
 		}
 	}
@@ -37,9 +37,9 @@ func matMul(a, b [][]float64) (x [][]float64) {
 
 func matTranspose(a [][]float64) (x [][]float64) {
 	x = make([][]float64, len(a[0]))
-	for i:=0; i<len(x); i++ {
+	for i := 0; i < len(x); i++ {
 		x[i] = make([]float64, len(a))
-		for j:=0; j<len(x[0]); j++ {
+		for j := 0; j < len(x[0]); j++ {
 			x[i][j] = a[j][i]
 		}
 	}

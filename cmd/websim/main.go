@@ -13,9 +13,9 @@ type source int // Source is where the measurements come from
 
 const (
 	manual source = iota // User sends measurements through websocket
-	random // Measurements are made randomly
-	file // Measurements come from a file
-	actual // Measurements come from an actual MPU sensor
+	random               // Measurements are made randomly
+	file                 // Measurements come from a file
+	actual               // Measurements come from an actual MPU sensor
 )
 
 type params struct {
@@ -31,9 +31,9 @@ type params struct {
 
 // Some sensible default parameters to start the user off
 var defaultParams = params{
-	manual,2,1.0,
-	&[]float64{0.8, 0.7, 0.9}, &[]float64{0.1, 0.15, -0.1},
-	0.25, 0.0009, 0.05,
+	manual, 3, 10000.0,
+	&[]float64{0.8, 0.7, 0.9}, &[]float64{1980, 1500, -1776},
+	0.25, 0.00000001, 0.05,
 }
 
 type measureCmd struct {
@@ -51,8 +51,8 @@ type messageIn struct {
 }
 
 type state struct {
-	K *[]float64 `json:"k"`   // Current estimate of K
-	L *[]float64 `json:"l"`   // Current estimate of L
+	K *[]float64   `json:"k"` // Current estimate of K
+	L *[]float64   `json:"l"` // Current estimate of L
 	P *[][]float64 `json:"p"` // Current estimate of P, uncertainty matrix of state
 }
 
@@ -121,24 +121,24 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 
 	// Read messages from the client and receive control messages
 	/*
-	1. Receive websocket message, determine type
-	2. If type is params:
-	   a. stop/close any current sim (send a nil measurement)
-	   b. initialize a new sim
-	   c. send reset command to client
-	3. If type is measure:
-	   a. create a measurement according to source
-	   b. send to filter
-	   c. send result to client
-	 */
+		1. Receive websocket message, determine type
+		2. If type is params:
+		   a. stop/close any current sim (send a nil measurement)
+		   b. initialize a new sim
+		   c. send reset command to client
+		3. If type is measure:
+		   a. create a measurement according to source
+		   b. send to filter
+		   c. send result to client
+	*/
 	var (
 		msgIn         messageIn
 		msgOut        messageOut
 		cmd           measureCmd
 		myMeasurement measurement
-		myParams = defaultParams
+		myParams      = defaultParams
 		myMeasurer, _ = makeManualMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
-		myEstimator = kalman.NewKalmanFilter(myParams.N, myParams.N0, myParams.SigmaK0, myParams.SigmaK, myParams.SigmaM)
+		myEstimator   = kalman.NewKalmanFilter(myParams.N, myParams.N0, myParams.SigmaK0, myParams.SigmaK, myParams.SigmaM)
 	)
 
 	// Send initial params
@@ -146,10 +146,10 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		&myParams,
 		nil,
 		&state{
-				K: myEstimator.K(),
-				L: myEstimator.L(),
-				P: myEstimator.P(),
-			},
+			K: myEstimator.K(),
+			L: myEstimator.L(),
+			P: myEstimator.P(),
+		},
 	}
 	if err = conn.WriteJSON(msgOut); err != nil {
 		log.Printf("Error writing params to websocket: %s\n", err)
@@ -182,7 +182,7 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 			case actual:
 				myParams.N = 3
 				myMeasurer, err = makeActualMeasurer()
-				if err!=nil {
+				if err != nil {
 					log.Printf("Error connecting to MPU: %s, setting Random measurer\n", err)
 					myMeasurer, _ = makeManualMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
 				}
