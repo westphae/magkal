@@ -7,6 +7,8 @@ import (
 	"github.com/westphae/goflying/mpu9250"
 )
 
+const deg = math.Pi / 180
+
 type measurement []float64 // A magnetometer measurement like [m1, m2, m3]
 type direction []float64   // Angles pointing in a direction like [theta, phi], in degrees
 type measurer func(a direction) (m measurement)
@@ -21,33 +23,48 @@ type measurer func(a direction) (m measurement)
 //   equation is n = k*(m-l)
 // The returned function takes a rough measurement just to satisfy the interface, but doesn't use it.
 func makeRandomMeasurer(n int, n0 float64, k, l []float64, r float64) (m measurer, err error) {
+	var theta, phi float64
 	if n == 1 {
 		return func(a direction) (m measurement) {
-			theta := 2 * math.Pi * (rand.Float64() - 0.5)
+			theta = 360 * deg * (rand.Float64() - 0.5)
 			if theta < 0 {
-				return []float64{-n0/k[0] + l[0] + r*rand.NormFloat64()}
+				return measurement{-n0/k[0] + l[0] + r*rand.NormFloat64()}
 			}
-			return []float64{n0/k[0] + l[0] + r*rand.NormFloat64()}
+			return measurement{n0/k[0] + l[0] + r*rand.NormFloat64()}
 		}, nil
 	}
 	if n == 2 {
+		const w = 0.01
+		var (
+			theta = 0.0
+			rot   = 5 * deg
+		)
+
 		return func(a direction) (m measurement) {
-			theta := 2 * math.Pi * (rand.Float64() - 0.5)
+			rot = (1-w)*rot + w*5*deg*2*(rand.Float64()-0.5)
+			if rand.Float64() < w {
+				if rand.Float64() < 0.5 {
+					rot += 5 * deg
+				} else {
+					rot -= 5 * deg
+				}
+			}
+			theta += rot
 			nx := n0 * math.Cos(theta)
 			ny := n0 * math.Sin(theta)
-			return []float64{
+			return measurement{
 				nx/k[0] + l[0] + r*rand.NormFloat64(),
 				ny/k[1] + l[1] + r*rand.NormFloat64(),
 			}
 		}, nil
 	}
 	return func(a direction) (m measurement) {
-		theta := 2 * math.Pi * (rand.Float64() - 0.5)
-		phi := math.Acos(2*rand.Float64() - 1)
+		theta = 2 * math.Pi * (rand.Float64() - 0.5)
+		phi = math.Acos(2*rand.Float64() - 1)
 		nx := n0 * math.Cos(theta) * math.Cos(phi)
 		ny := n0 * math.Sin(theta) * math.Cos(phi)
 		nz := n0 * math.Sin(phi)
-		return []float64{
+		return measurement{
 			nx/k[0] + l[0] + r*rand.NormFloat64(),
 			ny/k[1] + l[1] + r*rand.NormFloat64(),
 			nz/k[2] + l[2] + r*rand.NormFloat64(),
