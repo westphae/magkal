@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -60,6 +62,44 @@ type messageOut struct {
 	Params      *params      `json:"params"`      // The params the server is using
 	Measurement *measurement `json:"measurement"` // A raw measurement from the magnetometer source
 	State       *state       `json:"state"`       // Current state of the system
+}
+
+func (s state) String() string {
+	var r strings.Builder
+
+	r.WriteString("K: [")
+	for i := 0; i < len(*s.K); i++ {
+		r.WriteString(fmt.Sprintf("%12.3g", (*s.K)[i]))
+		if i < len(*s.K)-1 {
+			r.WriteString(" ")
+		}
+	}
+	r.WriteString("]\nL: [")
+
+	for i := 0; i < len(*s.K); i++ {
+		r.WriteString(fmt.Sprintf("%12.3g", (*s.L)[i]))
+		if i < len(*s.K)-1 {
+			r.WriteString(" ")
+		}
+	}
+	r.WriteString("]\nP: [")
+
+	for i := 0; i < len(*s.K); i++ {
+		r.WriteString("[")
+		for j := 0; j < len(*s.K); j++ {
+			r.WriteString(fmt.Sprintf("%12.3g", (*s.P)[i][j]))
+			if j < len(*s.K)-1 {
+				r.WriteString(" ")
+			}
+		}
+		r.WriteString("]")
+		if i < len(*s.K)-1 {
+			r.WriteString("\n    ")
+		}
+	}
+	r.WriteString("]")
+
+	return r.String()
 }
 
 var upgrader = websocket.Upgrader{
@@ -225,7 +265,7 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 				L: myEstimator.L(),
 				P: myEstimator.P(),
 			}
-			log.Printf("Sending state %v\n", msgOut.State)
+			log.Printf("Sending state\n%v\n", msgOut.State)
 		}
 
 		// Return message and clean up
