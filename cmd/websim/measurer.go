@@ -3,8 +3,6 @@ package main
 import (
 	"math"
 	"math/rand"
-
-	"github.com/westphae/goflying/mpu9250"
 )
 
 const deg = math.Pi / 180
@@ -137,17 +135,19 @@ func makeManualMeasurer(n int, n0 float64, k, l []float64, r float64) (m measure
 // Inputs:
 //   r: noise level
 // The returned function takes a rough measurement just to satisfy the interface, but doesn't use it.
+/*
 func makeActualMeasurer() (m measurer, err error) {
-	mpu, err := mpu9250.NewMPU9250(250, 4, 50, true, false)
+	mpu, err := mpu9250.NewMPU9250(nil, 0, 250, 4, 50, true, false)
 	if err != nil {
 		return nil, err
 	}
 	// defer mpu.CloseMPU() // This really should be closed. Move into goroutine.
 
-	var data *mpu9250.MPUData
+	var data *sensors.IMUData
 
 	return func(a direction) (m measurement) {
 		data = <-mpu.C
 		return []float64{data.M1, data.M2, data.M3}
 	}, nil
 }
+*/

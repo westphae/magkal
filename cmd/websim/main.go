@@ -53,9 +53,9 @@ type messageIn struct {
 }
 
 type state struct {
-	K *[]float64   `json:"k"` // Current estimate of K
-	L *[]float64   `json:"l"` // Current estimate of L
-	P *[][]float64 `json:"p"` // Current estimate of P, uncertainty matrix of state
+	K []float64   `json:"k"` // Current estimate of K
+	L []float64   `json:"l"` // Current estimate of L
+	P [][]float64 `json:"p"` // Current estimate of P, uncertainty matrix of state
 }
 
 type messageOut struct {
@@ -68,32 +68,32 @@ func (s state) String() string {
 	var r strings.Builder
 
 	r.WriteString("K: [")
-	for i := 0; i < len(*s.K); i++ {
-		r.WriteString(fmt.Sprintf("%12.3g", (*s.K)[i]))
-		if i < len(*s.K)-1 {
+	for i := 0; i < len(s.K); i++ {
+		r.WriteString(fmt.Sprintf("%12.3g", (s.K)[i]))
+		if i < len(s.K)-1 {
 			r.WriteString(" ")
 		}
 	}
 	r.WriteString("]\nL: [")
 
-	for i := 0; i < len(*s.K); i++ {
-		r.WriteString(fmt.Sprintf("%12.3g", (*s.L)[i]))
-		if i < len(*s.K)-1 {
+	for i := 0; i < len(s.K); i++ {
+		r.WriteString(fmt.Sprintf("%12.3g", (s.L)[i]))
+		if i < len(s.K)-1 {
 			r.WriteString(" ")
 		}
 	}
 	r.WriteString("]\nP: [")
 
-	for i := 0; i < len(*s.K); i++ {
+	for i := 0; i < len(s.K); i++ {
 		r.WriteString("[")
-		for j := 0; j < len(*s.K); j++ {
-			r.WriteString(fmt.Sprintf("%12.3g", (*s.P)[i][j]))
-			if j < len(*s.K)-1 {
+		for j := 0; j < len(s.K); j++ {
+			r.WriteString(fmt.Sprintf("%12.3g", (s.P)[i][j]))
+			if j < len(s.K)-1 {
 				r.WriteString(" ")
 			}
 		}
 		r.WriteString("]")
-		if i < len(*s.K)-1 {
+		if i < len(s.K)-1 {
 			r.WriteString("\n    ")
 		}
 	}
@@ -220,12 +220,15 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 				myMeasurer, _ = makeRandomMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
 				log.Println("Set Random measurer")
 			case actual:
-				myParams.N = 3
-				myMeasurer, err = makeActualMeasurer()
-				if err != nil {
-					log.Printf("Error connecting to MPU: %s, setting Random measurer\n", err)
-					myMeasurer, _ = makeManualMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
-				}
+				/*
+					myParams.N = 3
+					myMeasurer, err = makeActualMeasurer()
+					if err != nil {
+						log.Printf("Error connecting to MPU: %s, setting Random measurer\n", err)
+						myMeasurer, _ = makeManualMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
+					}
+				*/
+			case file: // TODO: implement
 			default:
 				myMeasurer, _ = makeManualMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
 				log.Printf("Received bad source: %d, setting Manual measurer\n", myParams.Source)
