@@ -258,7 +258,7 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 			msgIn.Estimate = nil
 			log.Printf("Estimating: %3.1f\n", nn)
 
-			myEstimator.U <- myMeasurement
+			myEstimator.U <- kalman.Matrix{myMeasurement}
 			myEstimator.Z <- nn
 			msgOut.State = &state{
 				K: myEstimator.K(),
