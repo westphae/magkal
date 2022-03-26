@@ -7,7 +7,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/westphae/magkal/kalman"
+	"github.com/westphae/magkal/pkg/kalman"
 )
 
 const (

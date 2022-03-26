@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/westphae/magkal/kalman"
+	"github.com/westphae/magkal/pkg/kalman"
 )
 
 type source int // Source is where the measurements come from
