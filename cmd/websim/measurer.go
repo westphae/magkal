@@ -57,11 +57,11 @@ func makeRandomMeasurer(n int, n0 float64, k, l []float64, r float64) (m measure
 		}, nil
 	}
 	return func(a direction) (m measurement) {
-		theta = 2 * math.Pi * (rand.Float64() - 0.5)
-		phi = math.Acos(2*rand.Float64() - 1)
-		nx := n0 * math.Cos(theta) * math.Cos(phi)
-		ny := n0 * math.Sin(theta) * math.Cos(phi)
-		nz := n0 * math.Sin(phi)
+		phi = 2 * math.Pi * (rand.Float64() - 0.5)
+		theta = math.Asin(2*rand.Float64() - 1)
+		nx := n0 * math.Cos(phi) * math.Cos(theta)
+		ny := n0 * math.Sin(phi) * math.Cos(theta)
+		nz := n0 * math.Sin(theta)
 		return measurement{
 			nx/k[0] + l[0] + r*rand.NormFloat64(),
 			ny/k[1] + l[1] + r*rand.NormFloat64(),
@@ -85,7 +85,7 @@ func makeManualMeasurer(n int, n0 float64, k, l []float64, r float64) (m measure
 		return func(a direction) (m measurement) {
 			var theta float64
 			if a != nil && len(a) >= 1 {
-				theta = a[0] * math.Pi / 180
+				theta = a[0] * deg
 			} else {
 				theta = 2 * math.Pi * rand.Float64()
 			}

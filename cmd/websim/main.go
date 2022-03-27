@@ -268,7 +268,10 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 				L: myEstimator.L(),
 				P: myEstimator.P(),
 			}
-			log.Printf("Sending state\n%v\n", msgOut.State)
+			log.Println("Sending state:")
+			log.Printf("K: %v\n", msgOut.State.K)
+			log.Printf("L: %v\n", msgOut.State.L)
+			log.Printf("P: %v\n", msgOut.State.P)
 		}
 
 		// Return message and clean up

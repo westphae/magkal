@@ -1,4 +1,4 @@
-var width = 400, height=400,
+let width = 400, height=400,
     margin = {top: 20, right: 2, bottom: 20, left: 40};
 
 // Draw Magnetometer cross-sections
@@ -6,7 +6,7 @@ var width = 400, height=400,
 // 2. Draw a small circle for lx,ly, both actual and predicted
 // 3. Draw an ellipse for n^2==n0^2, both actual and predicted
 function MagXSPlot(ax, ay, el) {
-    var self = this;
+    let self = this;
     this.el = el;
     this.ax = ax;
     this.ay = ay;
@@ -98,7 +98,7 @@ function MagXSPlot(ax, ay, el) {
         .attr("y2", this.y(0));
 
     this.update_state = function(datum) {
-        var d = {
+        let d = {
             'mx': datum['M'+self.ax], 'my': datum['M'+self.ay],
             'kx': datum['K'+self.ax], 'ky': datum['K'+self.ay],
             'lx': datum['L'+self.ax], 'ly': datum['L'+self.ay],
@@ -108,9 +108,9 @@ function MagXSPlot(ax, ay, el) {
         };
         self.data.push(d);
 
-        var ddots = self.dots.selectAll('circle').data(self.data);
+        let ddots = self.dots.selectAll('circle').data(self.data);
 
-        var changed = false;
+        let changed = false;
         if (d['mx']-d['n0']*d['sigmaM'] < self.llLim) {
             self.llLim = d['mx']-d['n0']*d['sigmaM'];
             changed = true;
@@ -179,7 +179,7 @@ function MagXSPlot(ax, ay, el) {
                 .attr("cy", function(d) { return self.y(d['my']); });
         }
 
-        var dnn = Math.max(-1, Math.min(1, (Math.sqrt(
+        let dnn = Math.max(-1, Math.min(1, (Math.sqrt(
        	        (datum["K1"]*(datum["M1"]-datum["L1"]))**2 +
                 (datum["K2"]*(datum["M2"]-datum["L2"]))**2 +
                 (datum["K3"]*(datum["M3"]-datum["L3"]))**2)/datum["N0"]
@@ -217,14 +217,14 @@ function MagXSPlot(ax, ay, el) {
     };
 
     this.update_measurement = function(datum) {
-        var d = {
+        let d = {
             'mx': datum['M'+self.ax], 'my': datum['M'+self.ay],
             'kx': datum['K'+self.ax], 'ky': datum['K'+self.ay],
             'lx': datum['L'+self.ax], 'ly': datum['L'+self.ay],
             'n0': datum['N0'], 'sigmaM': datum['sigmaM']
         };
 
-        var changed = false;
+        let changed = false;
         if (d['mx']-d['n0']*d['sigmaM'] < self.lLim) {
             self.lLim = d['mx']-d['n0']*d['sigmaM'];
             changed = true;
@@ -255,7 +255,7 @@ function MagXSPlot(ax, ay, el) {
                 .call(self.yAxis);
         }
 
-        var dcur = self.cur.selectAll('circle').data([d]);
+        let dcur = self.cur.selectAll('circle').data([d]);
 
         dcur.enter()
             .append("circle")
@@ -279,7 +279,7 @@ function MagXSPlot(ax, ay, el) {
 // 3. Draw error ellipse for K1, L3
 // 4. Draw lines of constant N0 for K1,L1 etc.
 function KLPlot(ax, ay, el) {
-    var self = this;
+    let self = this;
     this.el = el;
     this.ax = ax;
     this.ay = ay;
@@ -373,7 +373,7 @@ function KLPlot(ax, ay, el) {
         .attr("cy", this.y(0));
 
     this.update_state = function(datum) {
-        var d = {
+        let d = {
             'x': datum[self.ax] / (self.rescaleX ? datum['N0'] : 1),
             'y': datum[self.ay] / (self.rescaleY ? datum['N0'] : 1),
             'Actx': datum[self.ax[0]+'Act'+self.ax[1]] / (self.rescaleX ? datum['N0'] : 1),
@@ -384,7 +384,7 @@ function KLPlot(ax, ay, el) {
             'n0': datum['N0'], 'sigmaM': datum['sigmaM']
         };
 
-        var changed = false;
+        let changed = false;
         if (d['x'] < self.lLim) {
             self.lLim = d['x'];
             changed = true;
@@ -415,7 +415,7 @@ function KLPlot(ax, ay, el) {
                 .call(self.yAxis);
         }
 
-        var errEllipseData = calcEllipse(d['Pxx'], d['Pyy'], d['Pxy']);
+        let errEllipseData = calcEllipse(d['Pxx'], d['Pyy'], d['Pxy']);
 
         self.errEllipse.attr("transform", "translate(" + self.x(d['x']) + "," + self.y(d['y']) + ")");
 
@@ -437,28 +437,28 @@ function calcEllipse(pKK, pLL, pKL) {
         console.log("invalid vcv: l,l element not positive");
         return {'a': 0, 'b': 0, 'alpha': 0}
     }
-    var sK = Math.sqrt(pKK);
-    var sL = Math.sqrt(pLL);
+    let sK = Math.sqrt(pKK);
+    let sL = Math.sqrt(pLL);
     if (pKL===0) {
         return {'a': sL, 'b': sK, 'alpha': 0}
     }
-    var rho = pKL/(sK*sL);
+    let rho = pKL/(sK*sL);
     if (Math.abs(rho)>1) {
         console.log("invalid vcv: k,l element not a covariance");
         return {'a': 0, 'b': 0, 'alpha': 0}
     }
 
-    var alpha = Math.atan2(2*rho*sK*sL, pKK-pLL)/2;
-    var num = 2*pKK*pLL*(1-rho*rho);
-    var den = 2*pKL/Math.sin(2*alpha);
-    var a = Math.sqrt(num/(pKK+den+pLL));
-    var b = Math.sqrt(num/(pKK-den+pLL));
+    let alpha = Math.atan2(2*rho*sK*sL, pKK-pLL)/2;
+    let num = 2*pKK*pLL*(1-rho*rho);
+    let den = 2*pKL/Math.sin(2*alpha);
+    let a = Math.sqrt(num/(pKK+den+pLL));
+    let b = Math.sqrt(num/(pKK-den+pLL));
     return {'a': a, 'b': b, 'alpha': alpha*180/Math.PI}
 }
 
 // Draw dTheta Plot
 function DThetaPlot(el) {
-    var self = this;
+    let self = this;
     this.el = el;
     this.tbLim = 1e9;
     this.data={};
@@ -508,7 +508,7 @@ function DThetaPlot(el) {
     this.thetas = d3.range(0, 360);
 
     this.dTheta = function(theta) {
-        var dTheta = Math.atan2(
+        let dTheta = Math.atan2(
             self.data["ky"]*(self.data["n0"]*Math.sin(theta*Math.PI/180)/self.data["kActy"]+self.data["lActy"]-self.data["ly"]),
             self.data["kx"]*(self.data["n0"]*Math.cos(theta*Math.PI/180)/self.data["kActx"]+self.data["lActx"]-self.data["lx"])
         )*180/Math.PI-theta;
@@ -541,8 +541,8 @@ function DThetaPlot(el) {
         };
 
         if (self.tbLim>1) {
-            var rr = self.thetas.reduce(function (oMax, x) {
-                var y = self.dTheta(x);
+            let rr = self.thetas.reduce(function (oMax, x) {
+                let y = self.dTheta(x);
                 if (y < -oMax) {
                     oMax = -y;
                 }
@@ -552,7 +552,7 @@ function DThetaPlot(el) {
                 return oMax;
             }, 0);
 
-            var changed = false;
+            let changed = false;
             if (rr<self.tbLim/2) {
                 if (rr > 0.5) {
                     self.tbLim = 2 * rr;
@@ -578,7 +578,7 @@ function DThetaPlot(el) {
 }
 
 function MagInputArea(el, n, callback) {
-    var self = this, i;
+    let self = this, i;
     this.el = el;
     this.n = n;
     this.callback = callback;
@@ -676,7 +676,7 @@ function MagInputArea(el, n, callback) {
 
     this.cur = this.svg.append("g");
 
-    var ptrMove = function(ev) {
+    let ptrMove = function(ev) {
         if (self.activated) {
             self.xline.attr("visibility", "visible")
                 .attr("x1", ev[0])
@@ -693,20 +693,20 @@ function MagInputArea(el, n, callback) {
         .attr("height", this.height)
         .attr("opacity", 0)
         .on("touchstart", function() {
-            var ev = d3.touches(this)[0];
+            let ev = d3.touches(this)[0];
             d3.event.preventDefault();
             console.log("touchstart");
             self.activated = true;
             ptrMove(ev);
         }, {"passive": false, "capture": true})
         .on("touchmove", function() {
-            var ev = d3.touches(this)[0];
+            let ev = d3.touches(this)[0];
             d3.event.preventDefault();
             console.log("touchmove");
             ptrMove(ev);
         }, {"passive": false, "capture": true})
         .on("touchend", function() {
-            var ev = d3.touches(this)[0];
+            let ev = d3.touches(this)[0];
             d3.event.preventDefault();
             console.log("touchend");
             self.activated = false;
@@ -715,7 +715,7 @@ function MagInputArea(el, n, callback) {
             self.callback([self.x.invert(ev[0]), self.y.invert(ev[1])]);
         }, {"passive": false, "capture": true})
         .on("touchcancel", function() {
-            var ev = d3.touches(this)[0];
+            let ev = d3.touches(this)[0];
             d3.event.preventDefault();
             console.log("touchcancel");
             self.activated = false;
@@ -723,7 +723,7 @@ function MagInputArea(el, n, callback) {
             self.yline.attr("visibility", "hidden");
         })
         .on("touchleave", function() {
-            var ev = d3.touches(this)[0];
+            let ev = d3.touches(this)[0];
             d3.event.preventDefault();
             console.log("touchleave");
             self.activated = false;
@@ -731,18 +731,18 @@ function MagInputArea(el, n, callback) {
             self.yline.attr("visibility", "hidden");
         })
         .on("mousedown", function() {
-            var ev = d3.mouse(this);
+            let ev = d3.mouse(this);
             console.log("mousedown");
             self.activated = true;
             ptrMove(ev);
         }, true)
         .on("mousemove", function() {
-            var ev = d3.mouse(this);
+            let ev = d3.mouse(this);
             console.log("mousemove");
             ptrMove(ev);
         }, true)
         .on("mouseup", function() {
-            var ev = d3.mouse(this);
+            let ev = d3.mouse(this);
             console.log("mouseup");
             self.activated = false;
             self.xline.attr("visibility", "hidden");
@@ -750,14 +750,14 @@ function MagInputArea(el, n, callback) {
             self.callback([self.x.invert(ev[0]), self.y.invert(ev[1])])
         }, {"passive": false, "capture": true})
         .on("mousecancel", function() {
-            var ev = d3.mouse(this);
+            let ev = d3.mouse(this);
             console.log("mousecancel");
             self.activated = false;
             self.xline.attr("visibility", "hidden");
             self.yline.attr("visibility", "hidden");
         }, {"passive": false, "capture": true})
         .on("mouseleave", function() {
-            var ev = d3.mouse(this);
+            let ev = d3.mouse(this);
             console.log("mouseleave");
             self.activated = false;
             self.xline.attr("visibility", "hidden");
@@ -765,20 +765,20 @@ function MagInputArea(el, n, callback) {
         }, {"passive": false, "capture": true});
 
     this.update_measurement = function(datum) {
-        var n1 = datum['KAct1']*datum['M1']+datum['LAct1'],
+        let n1 = datum['KAct1']*datum['M1']+datum['LAct1'],
             n2 = datum['KAct2']*datum['M2']+datum['LAct2'],
             n3 = datum['KAct3']*datum['M3']+datum['LAct3'];
-        var nn = Math.sqrt(n1*n1+n2*n2+n3*n3);
-        var phi = this.n===3 ? Math.asin(n3/nn) : 0;
+        let nn = Math.sqrt(n1*n1+n2*n2+n3*n3);
+        let phi = this.n===3 ? Math.asin(n3/nn) : 0;
         console.log(this.n, phi);
-        var theta = Math.atan2(n2/(nn*Math.cos(phi)), n1/(nn*Math.cos(phi)));
-        var d = {
+        let theta = Math.atan2(n2/(nn*Math.cos(phi)), n1/(nn*Math.cos(phi)));
+        let d = {
             'theta': (theta<0 ? theta+2*Math.PI : theta)*180/Math.PI,
             'phi': phi*180/Math.PI,
             'n0': datum['N0'], 'sigmaM': datum['sigmaM']
         };
 
-        var dcur = self.cur.selectAll('circle').data([d]);
+        let dcur = self.cur.selectAll('circle').data([d]);
 
         dcur.enter()
             .append("circle")
