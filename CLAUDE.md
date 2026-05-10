@@ -75,14 +75,22 @@ is a fast, reproducible, scriptable iteration loop for filter work — both
 for human inspection and for me (Claude) to read state without parsing
 the websim's D3 plots.
 
-Step kinds: `sweep` (walk angles), `hold` (cluster around one direction
-with Gaussian jitter — the airplane cruise case), `random` (uniform on
-circle/sphere). Each step has a `label` that flows into output so segments
-can be sliced. See `cmd/replay/scripts/` for canonical scenarios; the
-critical one is `cruise_long_hold.yaml`, which reliably reproduces the
-EKF blow-up on long single-orientation holds (small `tr(P)` + huge
-state error = "confidently wrong" — the linearization sitting in a bad
-local minimum).
+Step kinds: `sweep` (walk angles), `hold` (cluster around one (theta,phi)
+in measurer convention with Gaussian jitter), `random` (uniform on
+circle/sphere), `body_frame` (aircraft holding a nominal (heading, pitch,
+roll) with jitter on each, with the Earth field rotated into body frame
+using `truth.inclination_deg`). Each step has a `label` that flows into
+output so segments can be sliced.
+
+Canonical scenarios in `cmd/replay/scripts/`:
+- `box.yaml` — well-conditioned 2D baseline.
+- `cruise_long_hold.yaml`, `cruise_with_turns.yaml` — older 2D-style
+  scenarios using `phi=0` (no z-component); now mainly useful as
+  regression tests against the historical EKF blow-up.
+- `cruise_realistic.yaml` — the intended workflow: hand-rotate at
+  home, then long cruise hold with realistic geomagnetic inclination
+  and small attitude jitter. The current open problem (long-hold drift
+  along the unobservable l-axis) is most visible here.
 
 Useful flags: `--every N` to downsample long runs, `--csv` for
 spreadsheet/plot input, `--summary` for a one-line per-segment digest to
