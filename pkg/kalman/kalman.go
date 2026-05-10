@@ -49,7 +49,13 @@ func NewKalmanFilter(n int, n0, sigmaK0, sigmaK, sigmaM float64) (k *Filter) {
 		k.q[2*i+1][2*i+1] = (n0 * sigmaK) * (n0 * sigmaK)
 	}
 
-	k.r = Matrix{{(n0 * sigmaM) * (n0 * sigmaM)}}
+	// var(z) where z = ‖n̂‖² and only m is noisy (z itself we feed as n0²
+	// exactly). Linearizing ‖n̂‖² in m around truth: var(z) ≈ 4·n0²·(n0·sigmaM)²
+	// when k≈1 and Σnᵢ²≈n0². The previous (n0·sigmaM)² value undersized r
+	// by a factor of (2·n0)², making the filter wildly overconfident in its
+	// measurement under any observation regime.
+	sigmaZ := 2 * n0 * n0 * sigmaM
+	k.r = Matrix{{sigmaZ * sigmaZ}}
 
 	k.U = make(chan Matrix)
 	k.Z = make(chan float64)
