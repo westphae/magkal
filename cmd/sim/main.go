@@ -13,8 +13,9 @@ import (
 const (
 	deg     = math.Pi / 180
 	N0      = 1.0  // Strength of Earth's magnetic field at current location
-	NSigma  = 0.1  // Initial uncertainty scale
-	Epsilon = 1e-2 // Some tiny noise scale
+	SigmaK0 = 0.1  // Initial uncertainty scale on k
+	SigmaK  = 1e-8 // Process noise on k; matches the webapp default
+	SigmaM  = 1e-2 // Fractional measurement noise
 )
 
 var (
@@ -45,7 +46,7 @@ func main() {
 		x0[2*i+1] = N0 * 0.25 * (2*rand.Float64() - 1)
 	}
 
-	kf = kalman.NewKalmanFilter(n, N0, NSigma, Epsilon)
+	kf = kalman.NewKalmanFilter(n, N0, SigmaK0, SigmaK, SigmaM)
 
 	fmt.Println("Initial state:")
 	printState()
@@ -83,17 +84,24 @@ Loop:
 		for i, psi = range psis {
 			fmt.Printf("Psi: %1.1f\n", psi)
 			mx = (N0*math.Cos(psi*deg) - x0[1]) / x0[0]
-			mx += Epsilon * math.Sqrt(2) * rand.NormFloat64()
+			mx += SigmaM * math.Sqrt(2) * rand.NormFloat64()
+			// Drain any stale Done signal so the post-step <-kf.Done can't
+			// pick up a leftover from a prior loop iteration.
+			select {
+			case <-kf.Done:
+			default:
+			}
 			if n == 1 {
 				fmt.Printf("Sending values (%1.3f)\n", mx)
-				kf.U <- [][]float64{{mx}}
+				kf.U <- kalman.Matrix{{mx}}
 			} else {
 				my = (N0*math.Sin(psi*deg) - x0[3]) / x0[2]
-				my += Epsilon * math.Sqrt(2) * rand.NormFloat64()
+				my += SigmaM * math.Sqrt(2) * rand.NormFloat64()
 				fmt.Printf("Sending values (%1.3f, %1.3f)\n", mx, my)
-				kf.U <- [][]float64{{mx}, {my}}
+				kf.U <- kalman.Matrix{{mx, my}}
 			}
-			kf.Z <- [][]float64{{N0 * N0}}
+			kf.Z <- N0 * N0
+			<-kf.Done
 			printState()
 			fmt.Println()
 		}
