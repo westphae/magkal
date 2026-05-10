@@ -3,18 +3,21 @@
 // Can quickly apply the current K & L and return the associated N^2.
 package kalman
 
+import "log"
+
 const EPS = 0.1 // Correction factor since KF is nonlinear
 
 type Filter struct {
-	n int          // Number of dimensions
-	x Matrix       // Kalman Filter hidden state
-	p Matrix       // Kalman Filter hidden state covariance
-	q Matrix       // Kalman Filter state noise process
-	r Matrix       // Measurement noise
-	u Matrix       // Control vector, measured mag vector in this case
-	z float64      // Measurement, earth's mag field strength **2
-	U chan Matrix  // Channel for sending new control values to Kalman Filter
-	Z chan float64 // Channel for sending new measurements to Kalman Filter
+	n int               // Number of dimensions
+	x Matrix            // Kalman Filter hidden state
+	p Matrix            // Kalman Filter hidden state covariance
+	q Matrix            // Kalman Filter state noise process
+	r Matrix            // Measurement noise
+	u Matrix            // Control vector, measured mag vector in this case
+	z float64           // Measurement, earth's mag field strength **2
+	U chan Matrix       // Channel for sending new control values to Kalman Filter
+	Z chan float64      // Channel for sending new measurements to Kalman Filter
+	Done chan struct{}  // Signalled (non-blocking) after each Z update completes; size-1 buffer
 }
 
 // NewKalmanFilter returns a Filter struct with Kalman Filter methods for calibrating a magnetometer.
@@ -50,6 +53,7 @@ func NewKalmanFilter(n int, n0, sigmaK0, sigmaK, sigmaM float64) (k *Filter) {
 
 	k.U = make(chan Matrix)
 	k.Z = make(chan float64)
+	k.Done = make(chan struct{}, 1)
 
 	go k.runFilter()
 
@@ -90,24 +94,38 @@ func (k *Filter) runFilter() {
 			for i := 0; i < k.n; i++ {
 				y -= nHat[i][0] * nHat[i][0]
 			}
+			log.Printf("Innovation y = %f\n", y)
 
 			// Calculate Jacobian
 			for i := 0; i < k.n; i++ {
 				h[0][2*i] = 2 * nHat[i][0] * nHat[i][0] / k.x[2*i][0]
 				h[0][2*i+1] = -2 * nHat[i][0] * k.x[2*i][0]
 			}
+			log.Printf("Jacobian H = %v\n", h)
 
 			// Calculate S
 			s = matAdd(k.r, matMul(h, matMul(k.p, matTranspose(h))))
+			log.Printf("Inn Cov s = %v\n", s)
 
 			// Kalman Gain
 			kk = matSMul(EPS/s[0][0], matMul(k.p, matTranspose(h)))
+			log.Printf("Gain kk = %v\n", kk)
 
 			// State correction
 			k.x = matAdd(k.x, matSMul(y, kk))
+			log.Printf("State Update y*kk = %v\n", matSMul(y, kk))
 
 			// State covariance correction
 			k.p = matMul(matAdd(id, matSMul(-1, matMul(kk, h))), k.p)
+			log.Printf("Cov Update kk*h = %v\n\n", matMul(matSMul(-1, matMul(kk, h)), k.p))
+
+			// Non-blocking signal that the update is complete; observers
+			// who care about post-update state read from Done after sending
+			// to Z. Drain Done before sending Z to avoid stale signals.
+			select {
+			case k.Done <- struct{}{}:
+			default:
+			}
 		}
 	}
 }
