@@ -15,9 +15,10 @@ type Direction struct {
 type stepKind string
 
 const (
-	kindSweep  stepKind = "sweep"
-	kindHold   stepKind = "hold"
-	kindRandom stepKind = "random"
+	kindSweep     stepKind = "sweep"
+	kindHold      stepKind = "hold"
+	kindRandom    stepKind = "random"
+	kindBodyFrame stepKind = "body_frame"
 )
 
 // Generated is one (kind, label, direction) triple emitted by an iterator.
@@ -29,15 +30,17 @@ type Generated struct {
 
 // expand turns one YAML Step into the sequence of Generated directions it
 // produces, in order. Uses rng for any randomness so the script's seed
-// fully determines output.
-func expand(s Step, n int, rng *rand.Rand) []Generated {
+// fully determines output. Takes Truth so body_frame can read inclination.
+func expand(s Step, t Truth, rng *rand.Rand) []Generated {
 	switch {
 	case s.Sweep != nil:
-		return expandSweep(s.Sweep, n)
+		return expandSweep(s.Sweep, t.N)
 	case s.Hold != nil:
-		return expandHold(s.Hold, n, rng)
+		return expandHold(s.Hold, t.N, rng)
 	case s.Random != nil:
-		return expandRandom(s.Random, n, rng)
+		return expandRandom(s.Random, t.N, rng)
+	case s.BodyFrame != nil:
+		return expandBodyFrame(s.BodyFrame, t, rng)
 	}
 	return nil
 }
@@ -103,6 +106,58 @@ func expandHold(s *HoldStep, n int, rng *rand.Rand) []Generated {
 		})
 	}
 	return out
+}
+
+// expandBodyFrame models an aircraft holding nominal (heading, pitch, roll)
+// with small Gaussian jitter. The Earth field is taken to be a unit vector
+// in NED of (cos I, 0, sin I) where I = truth.inclination_deg (positive
+// down, mid-northern-latitude ≈ 65°). Per sample, jittered Euler angles
+// rotate that vector into body frame, and the result is converted back to
+// the (theta, phi) convention the rest of the harness uses.
+func expandBodyFrame(s *BodyFrameStep, t Truth, rng *rand.Rand) []Generated {
+	out := make([]Generated, 0, s.Count)
+	I := t.InclinationDeg * deg
+	for i := 0; i < s.Count; i++ {
+		psi := (s.HeadingDeg + s.JitterHeadingDeg*rng.NormFloat64()) * deg
+		pit := (s.PitchDeg + s.JitterPitchDeg*rng.NormFloat64()) * deg
+		rol := (s.RollDeg + s.JitterRollDeg*rng.NormFloat64()) * deg
+		x, y, z := nedFieldToBody(I, psi, pit, rol)
+		// (x,y,z) is a unit vector. Convert to (theta, phi) such that
+		// (cos θ cos φ, sin θ cos φ, sin φ) = (x, y, z), which is the
+		// convention measure.go expects.
+		phi := math.Asin(z)
+		theta := math.Atan2(y, x)
+		out = append(out, Generated{
+			Kind: kindBodyFrame, Label: s.Label,
+			Dir: Direction{Theta: theta * 180 / math.Pi, Phi: phi * 180 / math.Pi},
+		})
+	}
+	return out
+}
+
+// nedFieldToBody returns the unit Earth-field vector in body frame, given
+// inclination I (rad, positive down) and aviation Euler angles (heading
+// psi, pitch, roll, all rad). Standard ZYX intrinsic: yaw about NED z,
+// then pitch about new y, then roll about new x. The transformation NED→body
+// is the transpose: R_x(-roll) R_y(-pitch) R_z(-psi).
+func nedFieldToBody(I, psi, pitch, roll float64) (x, y, z float64) {
+	cI, sI := math.Cos(I), math.Sin(I)
+	// R_z(-psi) applied to (cI, 0, sI):
+	cP, sP := math.Cos(psi), math.Sin(psi)
+	x1 := cP * cI
+	y1 := -sP * cI
+	z1 := sI
+	// R_y(-pitch):
+	cT, sT := math.Cos(pitch), math.Sin(pitch)
+	x2 := cT*x1 - sT*z1
+	y2 := y1
+	z2 := sT*x1 + cT*z1
+	// R_x(-roll):
+	cR, sR := math.Cos(roll), math.Sin(roll)
+	x = x2
+	y = cR*y2 + sR*z2
+	z = -sR*y2 + cR*z2
+	return
 }
 
 func expandRandom(s *RandomStep, n int, rng *rand.Rand) []Generated {

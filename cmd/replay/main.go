@@ -95,7 +95,7 @@ func run(s *Script) error {
 	}
 
 	for _, st := range s.Steps {
-		gens := expand(st, n, rng)
+		gens := expand(st, s.Truth, rng)
 		for _, g := range gens {
 			if g.Label != segLabel {
 				flushSegment()

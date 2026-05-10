@@ -8,11 +8,12 @@ import (
 )
 
 type Truth struct {
-	N     int       `yaml:"n"`
-	N0    float64   `yaml:"n0"`
-	K     []float64 `yaml:"k"`
-	L     []float64 `yaml:"l"`
-	Noise float64   `yaml:"noise"`
+	N              int       `yaml:"n"`
+	N0             float64   `yaml:"n0"`
+	K              []float64 `yaml:"k"`
+	L              []float64 `yaml:"l"`
+	Noise          float64   `yaml:"noise"`
+	InclinationDeg float64   `yaml:"inclination_deg,omitempty"` // magnetic inclination, positive down. Defaults to 0 (horizontal field).
 }
 
 type FilterCfg struct {
@@ -40,10 +41,26 @@ type RandomStep struct {
 	Label string `yaml:"label"`
 }
 
+// BodyFrameStep models an aircraft holding a nominal attitude with small
+// Gaussian jitter on heading/pitch/roll. The Earth field (using truth.n0
+// and truth.inclination_deg) is rotated into body frame per sample.
+// Only valid for n=3.
+type BodyFrameStep struct {
+	HeadingDeg       float64 `yaml:"heading_deg"`
+	PitchDeg         float64 `yaml:"pitch_deg"`
+	RollDeg          float64 `yaml:"roll_deg"`
+	JitterHeadingDeg float64 `yaml:"jitter_heading_deg"`
+	JitterPitchDeg   float64 `yaml:"jitter_pitch_deg"`
+	JitterRollDeg    float64 `yaml:"jitter_roll_deg"`
+	Count            int     `yaml:"count"`
+	Label            string  `yaml:"label"`
+}
+
 type Step struct {
-	Sweep  *SweepStep  `yaml:"sweep,omitempty"`
-	Hold   *HoldStep   `yaml:"hold,omitempty"`
-	Random *RandomStep `yaml:"random,omitempty"`
+	Sweep     *SweepStep     `yaml:"sweep,omitempty"`
+	Hold      *HoldStep      `yaml:"hold,omitempty"`
+	Random    *RandomStep    `yaml:"random,omitempty"`
+	BodyFrame *BodyFrameStep `yaml:"body_frame,omitempty"`
 }
 
 type Script struct {
@@ -100,8 +117,14 @@ func (s *Script) validate() error {
 		if st.Random != nil {
 			n++
 		}
+		if st.BodyFrame != nil {
+			n++
+			if s.Truth.N != 3 {
+				return fmt.Errorf("steps[%d]: body_frame requires truth.n=3 (got %d)", i, s.Truth.N)
+			}
+		}
 		if n != 1 {
-			return fmt.Errorf("steps[%d] must have exactly one of sweep/hold/random (got %d)", i, n)
+			return fmt.Errorf("steps[%d] must have exactly one of sweep/hold/random/body_frame (got %d)", i, n)
 		}
 	}
 	return nil
