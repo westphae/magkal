@@ -1,3 +1,4 @@
 .idea
 /cmd/sim/sim
 /cmd/websim/websim
+/cmd/replay/replay

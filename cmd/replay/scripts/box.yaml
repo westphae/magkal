@@ -1,0 +1,33 @@
+# Box-the-compass: a well-conditioned baseline.
+# Visit 12 evenly-spaced headings in 2D; the filter should converge cleanly.
+truth:
+  n: 2
+  n0: 1.0
+  k: [0.95, 0.92]
+  l: [0.05, -0.08]
+  noise: 0.01
+
+filter:
+  sigmaK0: 0.25
+  sigmaK:  1.0e-8
+  sigmaM:  0.01
+
+seed: 42
+
+steps:
+  - sweep:
+      from: [0,   0]
+      to:   [330, 0]
+      step: [30,  0]
+      label: "init_box"
+  # Repeat the box twice more to let the filter settle.
+  - sweep:
+      from: [0,   0]
+      to:   [330, 0]
+      step: [30,  0]
+      label: "box_2"
+  - sweep:
+      from: [0,   0]
+      to:   [330, 0]
+      step: [30,  0]
+      label: "box_3"
