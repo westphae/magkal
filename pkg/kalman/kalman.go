@@ -5,8 +5,6 @@ package kalman
 
 import "log"
 
-const EPS = 0.1 // Correction factor since KF is nonlinear
-
 type Filter struct {
 	n int               // Number of dimensions
 	x Matrix            // Kalman Filter hidden state
@@ -114,7 +112,7 @@ func (k *Filter) runFilter() {
 			log.Printf("Inn Cov s = %v\n", s)
 
 			// Kalman Gain
-			kk = matSMul(EPS/s[0][0], matMul(k.p, matTranspose(h)))
+			kk = matSMul(1/s[0][0], matMul(k.p, matTranspose(h)))
 			log.Printf("Gain kk = %v\n", kk)
 
 			// State correction
