@@ -15,14 +15,25 @@ the true field component. The known quantity is the Earth-field magnitude
 `‖n‖² = n0²` and uses that scalar measurement to estimate `(k_i, l_i)` for
 each axis.
 
-**Convergence under degenerate observation distributions is the central open
-problem.** In flight, an aircraft can hold a near-constant attitude for tens
-or hundreds of thousands of measurements (cruising straight and level), and
-this filter has historically blown up under that regime. The shelved
-aggregator branch (`caf0738`) was an attempt to mitigate it by downweighting
-redundant observations; that approach was abandoned as too burdensome.
-Any change to the filter should be evaluated against long-hold scenarios,
-not just well-distributed sweeps.
+**Intended operating model is calibrate-then-freeze, not always-on.** The
+target use case is: hand-rotate the device at home to seed an initial
+calibration, then install on the glareshield where it sits at near-constant
+attitude in cruise. Continuous EKF updates during cruise walk the
+calibration along the unobservable `k_i(m_i − l_i)` ridge (most visibly on
+the z-axis at non-trivial magnetic inclination — `cmd/replay/scripts/cruise_realistic.yaml`
+shows ~460 nT of `l_z` drift over 1M cruise samples even with the EKF
+properly tuned).
+
+The intended remedy is a state machine around the filter, not more EKF
+math: CALIBRATING → LOCKED when convergence is detected, LOCKED →
+CALIBRATING when divergence is detected (e.g. an iPad enters the cabin
+and perturbs the magnetic environment). See "Open questions / TODO" at
+the bottom of this file.
+
+The historical EKF blow-up under long-hold scenarios was fixed by sizing
+`r` correctly (it had been the variance of one component of `m` rather
+than of `z = ‖n̂‖²`); the residual ridge walk is much slower but still
+present, and is what the lock/unlock architecture is meant to neutralize.
 
 ## Commands
 
@@ -56,9 +67,13 @@ not just well-distributed sweeps.
   therefore has `n=3` and `len(x)=6`. `K()`, `L()`, the Jacobian `h`, and
   `calcMagField` all rely on this interleaving — don't change it without
   updating every reader.
-- **`EPS = 0.1`** in `kalman.go` is a hand-tuned damping factor on the Kalman
-  gain that makes the linearization behave; it is *not* numerical epsilon.
-  Don't remove or "clean up" it.
+- `r` is sized as `var(z = ‖n̂‖²) ≈ (2·n0²·sigmaM)²`, not as the variance
+  of one component of `m`. This is a non-obvious factor of `(2·n0)²` and
+  was a multi-year latent bug; the comment in `NewKalmanFilter` explains
+  the derivation. Don't "simplify" it back.
+- No damping factor on the Kalman gain — the standard EKF gain (`1/s`)
+  works once `r` is right. Earlier versions had `EPS = 0.1` to compensate
+  for the oversized gain caused by undersized `r`; that's been removed.
 - `matrices.go` defines `type Matrix [][]float64` and the basic linalg
   helpers. The repo deliberately uses plain slices instead of `gonum`.
 - The package doc comment ("aggregates measurements") is stale — the
@@ -131,6 +146,35 @@ post-update state.
   websocket and the parameter form; `analysis.js` (~800 lines) renders the
   live D3 plots, wired together via a `d3.dispatch` event bus
   (`measure_request`, `measurement`, `estimate_request`, `estimate`).
+
+## Open questions / TODO
+
+These are flagged for the project owner to address with real hardware and
+follow-up design work; Claude should not try to resolve them autonomously.
+
+- **Validate drift behavior against real hardware.** All current evidence
+  for long-hold ridge walk comes from simulation. Run `cmd/replay`-style
+  scenarios against a real magnetometer (the MPU9250 path in
+  `cmd/websim/measurer.go` is the obvious re-entry point) and compare
+  observed drift rates. The simulated drift may overstate or understate
+  what a real sensor's noise distribution produces.
+- **Define a quantitative "calibration satisfactory" criterion.** Needs
+  two signals composed: a confidence threshold (`tr(P)` or per-axis
+  `P_diag` below some bound) AND a coverage criterion (samples
+  distributed across enough of the unit sphere — the shelved aggregator
+  on branch `aggregator` had the right instinct here even though it was
+  applied to the wrong problem). Output is a `Converged() bool` (or
+  similar) on `kalman.Filter`.
+- **Add a lock/unlock state machine to handle the in-flight magnetic
+  environment.** When `Converged()`, freeze `(k, l)` and stop updating.
+  On each subsequent measurement, compute the would-be innovation
+  `y = n0² − Σ(k(m−l))²` and `s = R + HPH'` (without applying the
+  update); track windowed NIS `y²/s`. When NIS sustainedly exceeds a
+  chi-squared threshold, an iPad or avionics change has perturbed the
+  field — unlock and re-enter CALIBRATING mode with `P` re-inflated.
+  This is the right place to put the user's "sphericity / don't
+  over-favor one direction" intuition, but applied at the regime-
+  selection layer rather than as an EKF regularizer.
 
 ## Repo etiquette
 
