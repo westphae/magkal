@@ -276,7 +276,14 @@ vm = new Vue({
                     this.data['LAct' + (i+1)] = this.lAct[i] || 0;
                 }
 
-                if (this._lastN !== this.n) this.rebuildPlots();
+                if (this._lastN !== this.n) {
+                    this.rebuildPlots();
+                } else {
+                    // Same n -> keep DOM but reset per-plot history so
+                    // Restart visibly wipes the prior measurement trail.
+                    if (this.mxs_update  && this.mxs_update.clear_history)  this.mxs_update.clear_history();
+                    if (this.msmts       && this.msmts.clear_history)       this.msmts.clear_history();
+                }
                 this.refreshMaterialize();
             }
 

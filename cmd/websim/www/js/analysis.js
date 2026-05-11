@@ -270,7 +270,18 @@ function MagXSPlot(ax, ay, el) {
             .attr("y1", self.y(d['ly']))
             .attr("x2", self.x(d['mx']))
             .attr("y2", self.y(d['my']))
-    }
+    };
+
+    // clear_history wipes the accumulated dot history and resets the
+    // auto-fit axis limits so the next update starts from scratch. Used
+    // by app.js when params arrive on Restart but the plot doesn't need
+    // a full DOM rebuild (i.e., n is unchanged).
+    this.clear_history = function() {
+        self.data = [];
+        self.dots.selectAll('circle').remove();
+        self.llLim = 1e9; self.rrLim = -1e9;
+        self.ttLim = -1e9; self.bbLim = 1e9;
+    };
 }
 
 // Draw K-L Plots
@@ -674,7 +685,11 @@ function MagInputArea(el, n, callback) {
         .attr("x1", 0)
         .attr("x2", this.width);
 
+    // Order matters for z-order: history dots underneath the current
+    // marker so the crosshair stays legible.
+    this.dots = this.svg.append("g");
     this.cur = this.svg.append("g");
+    this.history = [];
 
     let ptrMove = function(ev) {
         if (self.activated) {
@@ -790,6 +805,28 @@ function MagInputArea(el, n, callback) {
             .merge(dcur)
             .attr("cx", function(d) { return self.x(d['theta']); })
             .attr("cy", function(d) { return self.y(d['phi']); });
-        console.log(d['phi'])
-    }
+
+        // Accumulate history. Skip duplicates that arrive from the
+        // continuous mouse-move stream by only adding once per distinct
+        // (theta, phi) pair. .dot is the same class as MagXSPlot uses,
+        // so it gets the same low-opacity styling.
+        let last = self.history[self.history.length - 1];
+        if (!last || last.theta !== d.theta || last.phi !== d.phi) {
+            self.history.push(d);
+            let ddots = self.dots.selectAll('circle.dot').data(self.history);
+            ddots.enter().append('circle')
+                .attr('class', 'dot')
+                .attr('r', 3)
+                .style('fill', 'steelblue')
+                .merge(ddots)
+                .attr('cx', function(p) { return self.x(p.theta); })
+                .attr('cy', function(p) { return self.y(p.phi); });
+        }
+    };
+
+    this.clear_history = function() {
+        self.history = [];
+        self.dots.selectAll('circle.dot').remove();
+        self.cur.selectAll('circle').remove();
+    };
 }
