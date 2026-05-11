@@ -8,57 +8,52 @@ main {
     flex: 1 0 auto;
 }
 
-.connected {
-    color: lawngreen;
-}
+.connected    { color: lawngreen; }
+.disconnected { color: red; }
 
-.disconnected {
-    color: red;
-}
-#messages {
-    min-height: 10vh;
-    height: 40vh;
-    width: 100%;
-    overflow-y: scroll;
-}
-
-/* State machine status panel */
+/* ===== State-machine status panel (always visible) ===== */
 .sm-panel {
     display: flex;
     align-items: center;
     gap: 16px;
-    padding: 8px 12px;
+    padding: 8px 16px;
     background: #f7f7f7;
     border-radius: 4px;
-    margin-bottom: 8px;
+    margin: 12px 0;
     flex-wrap: wrap;
 }
 .sm-badge {
     display: inline-block;
-    padding: 4px 12px;
+    padding: 4px 14px;
     border-radius: 4px;
     font-weight: bold;
     font-family: monospace;
     color: white;
     background: #888;
+    min-width: 48px;
+    text-align: center;
 }
 .sm-badge.mode-cal { background: #fb8c00; }  /* orange — calibrating */
-.sm-badge.mode-lck { background: #43a047; }  /* green — locked */
-.sm-metric {
-    font-family: monospace;
-}
+.sm-badge.mode-lck { background: #43a047; }  /* green  — locked */
+.sm-metric { font-family: monospace; }
 .sm-metric label {
     color: #666;
     font-size: 0.85em;
     margin-right: 4px;
 }
 
-/* Scenario playback controls */
+/* ===== Scenario playback controls ===== */
 .scenario-controls {
     display: flex;
     align-items: center;
     gap: 12px;
     flex-wrap: wrap;
+    padding: 4px 0;
+}
+.scenario-controls .rate-select {
+    display: inline-block;
+    width: auto;
+    margin: 0;
 }
 .scenario-controls .seg-label {
     font-family: monospace;
@@ -66,11 +61,51 @@ main {
     padding: 2px 8px;
     border-radius: 3px;
 }
-.scenario-controls .step-counter {
+.scenario-controls .step-counter { font-family: monospace; color: #555; }
+.scenario-controls .seeking-indicator { color: #fb8c00; font-style: italic; }
+.scrubber input[type="range"] { width: 100%; }
+
+/* Scenario read-only summary card */
+.scenario-info {
+    background: #fafafa;
+    border-left: 3px solid #43a047;
+    padding: 8px 12px;
+    margin: 8px 0;
+}
+.scenario-info p {
+    margin: 4px 0;
     font-family: monospace;
-    color: #555;
+    font-size: 0.9em;
 }
-.scenario-controls .seeking-indicator {
-    color: #fb8c00;
-    font-style: italic;
+
+/* State-machine enable checkbox sits at row baseline, not floated. */
+.sm-toggle { padding-top: 32px; }
+
+/* ===== Live-state readout table (right column) ===== */
+.state-card { margin-top: 0; }
+.state-table {
+    width: 100%;
+    font-family: monospace;
+    font-size: 0.95em;
 }
+.state-table th, .state-table td {
+    padding: 4px 8px;
+    text-align: right;
+}
+.state-table th:first-child, .state-table td:first-child {
+    text-align: left;
+    color: #888;
+    width: 2em;
+}
+.state-table th {
+    border-bottom: 1px solid #ddd;
+    color: #666;
+    font-weight: normal;
+}
+.err-good { color: #2e7d32; }
+.err-warn { color: #ef6c00; }
+.err-bad  { color: #c62828; font-weight: bold; }
+.trp { font-family: monospace; margin-top: 8px; }
+
+/* Tighten Materialize row spacing slightly */
+.row { margin-bottom: 12px; }

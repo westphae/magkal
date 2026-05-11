@@ -382,16 +382,18 @@ func (p *playback) asParams() params {
 	l := append([]float64(nil), p.truth.L...)
 	fc := p.script.Filter
 	out := params{
-		Source:    scenarioSrc,
-		N:         p.truth.N,
-		N0:        p.truth.N0,
-		KAct:      &k,
-		LAct:      &l,
-		SigmaK0:   fc.SigmaK0,
-		SigmaK:    fc.SigmaK,
-		SigmaM:    fc.SigmaM,
-		MaxSigmaK: fc.MaxSigmaK,
-		MaxSigmaL: fc.MaxSigmaL,
+		Source:         scenarioSrc,
+		N:              p.truth.N,
+		N0:             p.truth.N0,
+		KAct:           &k,
+		LAct:           &l,
+		SigmaK0:        fc.SigmaK0,
+		SigmaK:         fc.SigmaK,
+		SigmaM:         fc.SigmaM,
+		MaxSigmaK:      fc.MaxSigmaK,
+		MaxSigmaL:      fc.MaxSigmaL,
+		InclinationDeg: p.truth.InclinationDeg,
+		Noise:          p.truth.Noise,
 	}
 	if sm := fc.StateMachine; sm != nil {
 		out.StateMachineOn = true

@@ -25,12 +25,16 @@ type params struct {
 	SigmaM  float64    `json:"sigmaM"`  // Noise scale for measurement
 
 	// Convergence + state-machine tuning. All optional (zeros disable).
-	MaxSigmaK         float64 `json:"maxSigmaK"`
-	MaxSigmaL         float64 `json:"maxSigmaL"`
-	LockHysteresis    int     `json:"lockHysteresis"`
-	NISWindow         int     `json:"nisWindow"`
-	NISThreshold     float64 `json:"nisThreshold"`
-	StateMachineOn   bool    `json:"stateMachineOn"`
+	MaxSigmaK      float64 `json:"maxSigmaK"`
+	MaxSigmaL      float64 `json:"maxSigmaL"`
+	LockHysteresis int     `json:"lockHysteresis"`
+	NISWindow      int     `json:"nisWindow"`
+	NISThreshold   float64 `json:"nisThreshold"`
+	StateMachineOn bool    `json:"stateMachineOn"`
+
+	// Scenario-only descriptive info; ignored on inbound params.
+	InclinationDeg float64 `json:"inclinationDeg,omitempty"`
+	Noise          float64 `json:"noise,omitempty"`
 }
 
 // Some sensible default parameters to start the user off
