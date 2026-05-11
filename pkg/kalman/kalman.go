@@ -3,7 +3,10 @@
 // Can quickly apply the current K & L and return the associated N^2.
 package kalman
 
-import "log"
+import (
+	"log"
+	"math"
+)
 
 type Filter struct {
 	n int               // Number of dimensions
@@ -16,6 +19,11 @@ type Filter struct {
 	U chan Matrix       // Channel for sending new control values to Kalman Filter
 	Z chan float64      // Channel for sending new measurements to Kalman Filter
 	Done chan struct{}  // Signalled (non-blocking) after each Z update completes; size-1 buffer
+
+	// Convergence thresholds; zero means "not configured, Converged() returns
+	// false". See SetConvergenceThresholds and Converged.
+	maxSigmaK float64
+	maxSigmaL float64
 }
 
 // NewKalmanFilter returns a Filter struct with Kalman Filter methods for calibrating a magnetometer.
@@ -176,4 +184,53 @@ func (k *Filter) L() (l []float64) {
 
 func (k *Filter) P() (p Matrix) {
 	return k.p
+}
+
+// SetConvergenceThresholds sets the per-axis bounds used by Converged.
+// Pass (0, 0) to disable convergence checking (the default after
+// NewKalmanFilter, so existing callers see no behavior change).
+//
+// Thresholds are in state-space units:
+//   - maxSigmaK is dimensionless. The k_i are scale factors near 1, so a
+//     value of 1.0e-3 means "trust each k_i to within 0.1%".
+//   - maxSigmaL is in the same units as n0 (typically nT for geomagnetic
+//     use). A value of 5.0 means "trust each l_i to within 5 nT".
+//
+// The right values depend on the operational target and on real
+// magnetometer noise; treat these as tunables to ground against
+// hardware data, not as load-bearing constants.
+func (k *Filter) SetConvergenceThresholds(maxSigmaK, maxSigmaL float64) {
+	k.maxSigmaK = maxSigmaK
+	k.maxSigmaL = maxSigmaL
+}
+
+// Converged reports whether the calibration is satisfactory by the
+// configured thresholds. Returns false if SetConvergenceThresholds has
+// not been called (or was called with zeros).
+//
+// The criterion is per-axis P-diagonal bounds:
+//
+//	√P[2i][2i]     < maxSigmaK   for all i
+//	√P[2i+1][2i+1] < maxSigmaL   for all i
+//
+// This catches the common "axis was never observed" failure (its
+// diagonals stay large), but doesn't fully catch off-diagonal
+// degeneracy along an unobservable (kᵢ, lᵢ) ridge — for that we'd need
+// max-eigenvalue(P). Adequate for v1; upgrade if hardware data shows
+// the diagonals lying about convergence.
+func (k *Filter) Converged() bool {
+	if k.maxSigmaK == 0 || k.maxSigmaL == 0 {
+		return false
+	}
+	maxVarK := k.maxSigmaK * k.maxSigmaK
+	maxVarL := k.maxSigmaL * k.maxSigmaL
+	for i := 0; i < k.n; i++ {
+		if k.p[2*i][2*i] > maxVarK || math.IsNaN(k.p[2*i][2*i]) {
+			return false
+		}
+		if k.p[2*i+1][2*i+1] > maxVarL || math.IsNaN(k.p[2*i+1][2*i+1]) {
+			return false
+		}
+	}
+	return true
 }
