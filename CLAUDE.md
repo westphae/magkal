@@ -175,9 +175,6 @@ post-update state.
   - `file` — TODO.
   Plus `scenarioSrc` (in `messages.go`) which uses the playback object
   rather than the measurer interface.
-- `analysis.go` — `CalcEllipse` derives the semi-axes and rotation of a 2D
-  confidence ellipse from a 2×2 sub-block of the state covariance, for
-  plotting.
 - `www/` is a Vue 2 + Materialize + D3 single-page app. `app.js` owns the
   websocket, the parameter form, and the scenario/state-machine controls;
   `analysis.js` (~800 lines) renders the live D3 plots, wired together via
