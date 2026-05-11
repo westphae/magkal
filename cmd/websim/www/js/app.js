@@ -1,6 +1,7 @@
 var params = {},
     self,
-    measureInterval;
+    measureInterval,
+    scrubThrottleTimer = null;
 
 var dispatch = d3.dispatch("measure_request", "measurement", "estimate_request", "estimate");
 
@@ -8,66 +9,67 @@ vm = new Vue({
     el: '#app',
 
     data: {
-        ws: null,              // Our websocket
-        source: 0,             // Data source selected by the user: manual, random, file, actual
-        n: 3,                  // Number of dimensions
-        n0: 1.0,               // Strength of magnetic field
-        kAct0: 1.0,            // Actual k for manual or random measurement sources
-        kAct1: 1.0,            // Actual k for manual or random measurement sources
-        kAct2: 1.0,            // Actual k for manual or random measurement sources
-        lAct0: 0.0,            // Actual l for manual or random measurement sources
-        lAct1: 0.0,            // Actual l for manual or random measurement sources
-        lAct2: 0.0,            // Actual l for manual or random measurement sources
-        sigmaK0: 0.25,         // Initial standard deviation of uncertainty of k
-        sigmaK: 0.01,          // Process standard deviation of uncertainty of k
-        sigmaM: 0.05,          // Small noise scale
-        msgContent: '',        // A running list of data messages displayed on the screen
-        params: params,        // Actual parameters currently being used, will be replaced by above when sent to server
-        measuring: false,      // Are we measuring continuously?
-        connected: false,      // Whether or not the websocket is connected
-        msmts: null,           // Interactive area to select measurement values
-        mxs_update: null,      // M cross-section plot
+        ws: null,
+        source: 0,
+        n: 3,
+        n0: 1.0,
+        kAct0: 1.0, kAct1: 1.0, kAct2: 1.0,
+        lAct0: 0.0, lAct1: 0.0, lAct2: 0.0,
+        sigmaK0: 0.25,
+        sigmaK: 0.01,
+        sigmaM: 0.05,
+        // Convergence + state-machine tuning
+        maxSigmaK: 0,
+        maxSigmaL: 0,
+        smOn: false,
+        lockHysteresis: 10,
+        nisWindow: 100,
+        nisThreshold: 4.0,
+        // Server-reported state-machine status
+        mode: '',
+        nis: null,
+        converged: false,
+        // Scenario state
+        scenarios: [],
+        scenarioPick: '',
+        playback: { step: 0, total: 0, segment: '', playing: false, seeking: false, rateHz: 10, loaded: '' },
+        rateHz: 10,
+        msgContent: '',
+        params: params,
+        measuring: false,
+        connected: false,
+        msmts: null,
+        mxs_update: null,
         k1l1_update: null,
         dTheta_update: null,
         k2l2_update: null,
         kk_update: null,
         ll_update: null,
-        data: {}               // Data to pass into plots
+        data: {}
     },
 
     created: function() {
         self = this;
-
         this.ws = new WebSocket('ws://' + window.location.host + '/websocket');
         this.ws.addEventListener('open', function() { self.connected = true; });
         this.ws.addEventListener('close', function() { self.connected = false; });
         this.ws.addEventListener('message', this.handleMessages);
         dispatch.on("measure_request", function(msg) {
-            self.ws.send(
-                JSON.stringify({"measure": msg})
-            );
+            self.ws.send(JSON.stringify({"measure": msg}));
         });
         dispatch.on("estimate_request", function(msg) {
-            self.ws.send(
-                JSON.stringify({"estimate": msg})
-            );
+            self.ws.send(JSON.stringify({"estimate": msg}));
         });
         dispatch.on("measurement", function() {
-           dispatch.call("estimate_request", this, {"nn": self.n0 * self.n0})
+            dispatch.call("estimate_request", this, {"nn": self.n0 * self.n0});
         });
     },
 
     methods: {
         check_n: function() {
-            if (
-                this.n !== Math.floor(this.n) ||
-                this.n < 1 ||
-                this.n > 3
-            ) { this.n = params.n; }
+            if (this.n !== Math.floor(this.n) || this.n < 1 || this.n > 3) { this.n = params.n; }
         },
-        check_n0: function() {
-            if (this.n0 <= 0) { this.n0 = params.n0; }
-        },
+        check_n0: function() { if (this.n0 <= 0) { this.n0 = params.n0; } },
         check_kAct: function() {
             var n = parseInt(this.n);
             if (this.kAct0<=0) { this.kAct0 = params.kAct[0]; }
@@ -75,16 +77,11 @@ vm = new Vue({
             if (n===3 && this.kAct2<=0) { this.kAct2 = params.kAct[2]; }
         },
         check_lAct: function() { },
-        check_sigmaK0: function() {
-            if (this.sigmaK0 <= 0) { this.sigmaK0 = params.sigmaK0; }
-        },
-        check_sigmaK: function() {
-            if (this.sigmaK <= 0) { this.sigmaK = params.sigmaK; }
-        },
-        check_sigmaM: function() {
-            if (this.sigmaM <= 0) { this.sigmaM = params.sigmaM; }
-        },
+        check_sigmaK0: function() { if (this.sigmaK0 <= 0) { this.sigmaK0 = params.sigmaK0; } },
+        check_sigmaK: function() { if (this.sigmaK <= 0) { this.sigmaK = params.sigmaK; } },
+        check_sigmaM: function() { if (this.sigmaM <= 0) { this.sigmaM = params.sigmaM; } },
         check_params_changed: function() {
+            if (!params.kAct || !params.lAct) { return true; }
             return !(
                 params.source === parseInt(this.source) &&
                 params.n === this.n &&
@@ -92,13 +89,13 @@ vm = new Vue({
                 params.kAct[0] === this.kAct0 &&
                 params.kAct[1] === this.kAct1 &&
                 params.kAct[2] === this.kAct2 &&
-                params.lAct[0] === this.lAct0&&
+                params.lAct[0] === this.lAct0 &&
                 params.lAct[1] === this.lAct1 &&
                 params.lAct[2] === this.lAct2 &&
                 params.sigmaK0 === this.sigmaK0 &&
                 params.sigmaK === this.sigmaK &&
                 params.sigmaM === this.sigmaM
-            )
+            );
         },
         restart: function () {
             params = {
@@ -109,22 +106,22 @@ vm = new Vue({
                 lAct: [this.lAct0, this.lAct1, this.lAct2],
                 sigmaK0: this.sigmaK0,
                 sigmaK: this.sigmaK,
-                sigmaM: this.sigmaM
+                sigmaM: this.sigmaM,
+                maxSigmaK: this.maxSigmaK || 0,
+                maxSigmaL: this.maxSigmaL || 0,
+                stateMachineOn: !!this.smOn,
+                lockHysteresis: this.lockHysteresis,
+                nisWindow: this.nisWindow,
+                nisThreshold: this.nisThreshold
             };
-
-            var msg = {"params": params};
-            this.ws.send(
-                JSON.stringify(msg)
-            );
+            this.ws.send(JSON.stringify({"params": params}));
         },
         measureOnce: function () {
-            var msg = {"a": null};
-            dispatch.call("measure_request", this, msg);
+            dispatch.call("measure_request", this, {"a": null});
         },
         measureMany: function () {
             measureInterval = setInterval(function () {
-                var msg = {"a": null};
-                dispatch.call("measure_request", this, msg);
+                dispatch.call("measure_request", this, {"a": null});
             }, 50);
             this.measuring = true;
         },
@@ -132,26 +129,88 @@ vm = new Vue({
             clearInterval(measureInterval);
             this.measuring = false;
         },
+
+        // Scenario controls
+        loadScenario: function () {
+            if (!this.scenarioPick) { return; }
+            this.ws.send(JSON.stringify({"loadScenario": this.scenarioPick}));
+        },
+        playPause: function () {
+            if (this.playback.playing) {
+                this.ws.send(JSON.stringify({"playbackCmd": {"action": "pause"}}));
+            } else {
+                this.ws.send(JSON.stringify({"playbackCmd": {"action": "play", "rateHz": parseInt(this.rateHz)}}));
+            }
+        },
+        stepOne: function () {
+            this.ws.send(JSON.stringify({"playbackCmd": {"action": "step"}}));
+        },
+        resetScenario: function () {
+            this.ws.send(JSON.stringify({"playbackCmd": {"action": "reset"}}));
+        },
+        setRate: function () {
+            this.ws.send(JSON.stringify({"playbackCmd": {"action": "setRate", "rateHz": parseInt(this.rateHz)}}));
+        },
+        onScrub: function (e) {
+            // Throttle slider input to ~10 Hz; the server cancels in-flight
+            // seeks when a new one arrives, so rapid drag is responsive.
+            var target = parseInt(e.target.value);
+            if (scrubThrottleTimer) { return; }
+            scrubThrottleTimer = setTimeout(function () {
+                scrubThrottleTimer = null;
+                self.ws.send(JSON.stringify({"playbackCmd": {"action": "seek", "step": target}}));
+            }, 100);
+        },
+
+        // State machine manual controls
+        forceLock: function () {
+            this.ws.send(JSON.stringify({"setMode": "LCK"}));
+        },
+        forceUnlock: function () {
+            this.ws.send(JSON.stringify({"setMode": "CAL"}));
+        },
+
         handleMessages: function(e) {
             var msg = JSON.parse(e.data);
 
-            // Handle received params
-            if (msg.hasOwnProperty('params') && msg.params!==null) {
-                params = msg['params'];
+            // Initial list of available scenarios
+            if (msg.scenarios) {
+                this.scenarios = msg.scenarios;
+            }
+
+            // State machine fields (may arrive on any message)
+            if (msg.hasOwnProperty('mode') && msg.mode !== null) { this.mode = msg.mode; }
+            if (msg.hasOwnProperty('nis') && msg.nis !== null)   { this.nis = msg.nis; }
+            if (msg.hasOwnProperty('converged') && msg.converged !== null) { this.converged = msg.converged; }
+            if (msg.hasOwnProperty('playback') && msg.playback !== null)   { this.playback = msg.playback; }
+
+            // Received params (initial or on source/scenario change)
+            if (msg.params) {
+                params = msg.params;
                 params.source = parseInt(params.source);
                 this.params = params;
                 this.source = params.source;
                 this.n = params.n;
                 this.n0 = params.n0;
-                this.kAct0 = params.kAct[0];
-                this.kAct1 = params.kAct[1];
-                this.kAct2 = params.kAct[2];
-                this.lAct0 = params.lAct[0];
-                this.lAct1 = params.lAct[1];
-                this.lAct2 = params.lAct[2];
+                if (params.kAct) {
+                    this.kAct0 = params.kAct[0] || 1.0;
+                    this.kAct1 = params.kAct[1] || 1.0;
+                    this.kAct2 = params.kAct[2] || 1.0;
+                }
+                if (params.lAct) {
+                    this.lAct0 = params.lAct[0] || 0.0;
+                    this.lAct1 = params.lAct[1] || 0.0;
+                    this.lAct2 = params.lAct[2] || 0.0;
+                }
                 this.sigmaK0 = params.sigmaK0;
                 this.sigmaK = params.sigmaK;
                 this.sigmaM = params.sigmaM;
+                this.maxSigmaK = params.maxSigmaK || 0;
+                this.maxSigmaL = params.maxSigmaL || 0;
+                this.smOn = !!params.stateMachineOn;
+                if (params.lockHysteresis) { this.lockHysteresis = params.lockHysteresis; }
+                if (params.nisWindow)      { this.nisWindow = params.nisWindow; }
+                if (params.nisThreshold)   { this.nisThreshold = params.nisThreshold; }
 
                 this.data['M1'] = 0;
                 this.data['M2'] = 0;
@@ -167,18 +226,17 @@ vm = new Vue({
                 this.data['sigmaK'] = this.sigmaK;
                 this.data['sigmaM'] = this.sigmaM;
 
-                this.msgContent = '<div class="chip">' +
-                    JSON.stringify(msg.params) +
-                    '</div>' +
-                    '<br/>';
+                this.msgContent = '<div class="chip">' + JSON.stringify(msg.params) + '</div><br/>';
 
+                // Rebuild plots if anything that affects them changed (n, truth).
+                // Cheap; the existing implementation already does this on every
+                // params message.
                 d3.select('#m-plot').selectAll('svg').remove();
                 this.mxs_update = new MagXSPlot(1, 2, "#m-plot");
                 dispatch.on("estimate.mxs", this.mxs_update.update_state);
                 dispatch.on("measurement.mxs", this.mxs_update.update_measurement);
                 this.msmts = new MagInputArea('#m-plot', this.n, function(d) {
-                    var msg = {"a": d};
-                    dispatch.call("measure_request", self, msg);
+                    dispatch.call("measure_request", self, {"a": d});
                 });
                 dispatch.on("measurement.msmts", this.msmts.update_measurement);
                 this.k1l1_update = new KLPlot("L1", "K1", "#m-plot");
@@ -193,32 +251,24 @@ vm = new Vue({
                     this.dTheta_update = new DThetaPlot("#m-plot");
                     dispatch.on("estimate.dTheta", this.dTheta_update.update_state);
                 }
+
+                // Re-init Materialize selects since options changed.
+                this.$nextTick(function () {
+                    var elems = document.querySelectorAll('select');
+                    M.FormSelect.init(elems, {});
+                });
             }
 
-            // Handle received measurement
-            if (msg.hasOwnProperty('measurement') && msg.measurement!==null) {
-                this.msgContent = '<div class="chip">' +
-                    JSON.stringify(msg.measurement) +
-                    '</div>' +
-                    '<br/>';
-
+            if (msg.measurement) {
+                this.msgContent = '<div class="chip">' + JSON.stringify(msg.measurement) + '</div><br/>';
                 this.data['M1'] = msg.measurement[0];
-                if (this.n>=2) {
-                    this.data['M2'] = msg.measurement[1];
-                }
-                if (this.n===3) {
-                    this.data['M3'] = msg.measurement[2];
-                }
+                if (this.n>=2) { this.data['M2'] = msg.measurement[1]; }
+                if (this.n===3) { this.data['M3'] = msg.measurement[2]; }
                 dispatch.call("measurement", this, this.data);
             }
 
-            // Handle received state
-            if (msg.hasOwnProperty('state') && msg.state!==null) {
-                this.msgContent = '<div class="chip">' +
-                    JSON.stringify(msg.state) +
-                    '</div>' +
-                    '<br/>';
-
+            if (msg.state) {
+                this.msgContent = '<div class="chip">' + JSON.stringify(msg.state) + '</div><br/>';
                 this.data['K1'] = msg.state.k[0];
                 this.data['L1'] = msg.state.l[0];
                 this.data['PK1K1'] = msg.state.p[0][0];
@@ -269,13 +319,12 @@ vm = new Vue({
             }
 
             var element = document.getElementById('messages');
-            element.scrollTop = element.scrollHeight; // Auto scroll to the bottom
+            if (element) { element.scrollTop = element.scrollHeight; }
         }
     }
 });
 
 document.addEventListener('DOMContentLoaded', function() {
     var elems = document.querySelectorAll('select');
-    var options = {};
-    var instances = M.FormSelect.init(elems, options);
+    M.FormSelect.init(elems, {});
 });

@@ -149,10 +149,23 @@ post-update state.
 ### `cmd/websim/` — websocket-driven web UI
 
 - `main.go` serves `www/` and `/websocket`. Each websocket connection owns
-  its own `measurer` (synthetic data source) and `*kalman.Filter`.
-- Wire protocol is JSON `messageIn` / `messageOut`. `messageIn` carries
-  exactly one of `params` / `measure` / `estimate`; the server replies with
-  the corresponding `params` / `measurement` / `state` field set.
+  its own `measurer` (synthetic data source) and `*kalman.Filter`, plus an
+  optional `*playback` when the `scenarioSrc` source is selected.
+- `messages.go` defines the wire protocol (JSON `messageIn`/`messageOut`).
+  Each direction is a union of optional fields; receivers ignore what they
+  don't recognize.
+  - `messageIn` carries any subset of `params` / `measure` / `estimate`
+    (legacy manual/random paths) / `loadScenario` / `playbackCmd` / `setMode`.
+  - `messageOut` carries any subset of `params` / `measurement` / `state`
+    / `scenarios` (initial connect) / `mode` / `nis` / `converged` /
+    `playback` (step, total, segment, playing, seeking, rateHz, loaded).
+- `playback.go` owns server-driven scenario playback. Scripts are loaded
+  from `cmd/replay/scripts/` and pre-expanded via `internal/scenario`
+  into an indexed `[]Generated` slice; the main loop ticks at `rateHz`
+  through that slice. `seek` runs in its own goroutine with a cancel
+  context so live scrubber drags preempt in-progress seeks. `ForceLock`
+  / `ForceUnlock` on the filter are wired to the UI's "Force Lock" /
+  "Force Unlock" buttons.
 - `measurer.go` defines the `measurer` interface and several sources:
   - `manual` — measurement direction supplied by the client.
   - `random` — auto-generated angles; the 2D version simulates a slowly
@@ -160,13 +173,20 @@ post-update state.
   - `actual` — real MPU9250 sensor; **commented out** but its imports
     (`goflying`, `embd` via `go.sum`) are kept so it can be re-enabled.
   - `file` — TODO.
+  Plus `scenarioSrc` (in `messages.go`) which uses the playback object
+  rather than the measurer interface.
 - `analysis.go` — `CalcEllipse` derives the semi-axes and rotation of a 2D
   confidence ellipse from a 2×2 sub-block of the state covariance, for
   plotting.
 - `www/` is a Vue 2 + Materialize + D3 single-page app. `app.js` owns the
-  websocket and the parameter form; `analysis.js` (~800 lines) renders the
-  live D3 plots, wired together via a `d3.dispatch` event bus
-  (`measure_request`, `measurement`, `estimate_request`, `estimate`).
+  websocket, the parameter form, and the scenario/state-machine controls;
+  `analysis.js` (~800 lines) renders the live D3 plots, wired together via
+  a `d3.dispatch` event bus (`measure_request`, `measurement`,
+  `estimate_request`, `estimate`).
+- **Concurrency:** a single writer goroutine drains an outbound channel
+  to serialize websocket writes; the read goroutine pushes parsed
+  messages to a channel the main loop selects on alongside the play
+  ticker.
 
 ## Open questions / TODO
 

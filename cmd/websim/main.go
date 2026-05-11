@@ -3,66 +3,15 @@ package main
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/westphae/magkal/internal/scenario"
 	"github.com/westphae/magkal/pkg/kalman"
 )
-
-type source int // Source is where the measurements come from
-
-const (
-	manual source = iota // User sends measurements through websocket
-	random               // Measurements are made randomly
-	file                 // Measurements come from a file
-	actual               // Measurements come from an actual MPU sensor
-)
-
-type params struct {
-	Source  source     `json:"source"`  // Source of the magnetometer data
-	N       int        `json:"n"`       // Number of dimensions
-	N0      float64    `json:"n0"`      // Value of Earth's magnetic field at location
-	KAct    *[]float64 `json:"kAct"`    // Actual K for manual, random measurement sources
-	LAct    *[]float64 `json:"lAct"`    // Actual L for manual, random measurement sources
-	SigmaK0 float64    `json:"sigmaK0"` // Initial noise scale for k
-	SigmaK  float64    `json:"sigmaK"`  // Process noise scale for k
-	SigmaM  float64    `json:"sigmaM"`  // Noise scale for measurement
-}
-
-// Some sensible default parameters to start the user off
-var defaultParams = params{
-	manual, 3, 10000.0,
-	&[]float64{0.8, 0.7, 0.9}, &[]float64{1980, 1500, -1776},
-	0.25, 0.00000001, 0.05,
-}
-
-type measureCmd struct {
-	A direction `json:"a"` // Raw measurement (for manual), pre-noise
-}
-
-type estimateCmd struct {
-	NN float64 `json:"nn"` // The actual measurement of N^2
-}
-
-type messageIn struct {
-	Params   *params      `json:"params"`   // if the messageIn contains new params
-	Measure  *measureCmd  `json:"measure"`  // if the messageIn contains a measurement command
-	Estimate *estimateCmd `json:"estimate"` // if the messageIn contains an estimate command
-}
-
-type state struct {
-	K []float64   `json:"k"` // Current estimate of K
-	L []float64   `json:"l"` // Current estimate of L
-	P [][]float64 `json:"p"` // Current estimate of P, uncertainty matrix of state
-}
-
-type messageOut struct {
-	Params      *params      `json:"params"`      // The params the server is using
-	Measurement *measurement `json:"measurement"` // A raw measurement from the magnetometer source
-	State       *state       `json:"state"`       // Current state of the system
-}
 
 func (s state) String() string {
 	var r strings.Builder
@@ -116,6 +65,19 @@ func main() {
 	log.Fatal(http.ListenAndServe(":8000", nil))
 }
 
+// connectionState holds everything the per-connection loop touches.
+// Splitting it out keeps the main loop readable.
+type connectionState struct {
+	conn          *websocket.Conn
+	params        params
+	measurer      measurer
+	estimator     *kalman.Filter
+	measurement   measurement
+	pb            *playback     // non-nil only when params.Source == scenario
+	playbackRng   *rand.Rand    // measurement-noise rng for playback ticks; reset on load/reset/seek
+	outCh         chan messageOut
+}
+
 func handleConnections(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -129,158 +91,383 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	}()
 	log.Println("A client opened a connection")
 
-	// Handle ping-pong
-	var timeout *time.Timer
-	go func() {
-		pingTime := time.NewTicker(5 * time.Second)
-		for {
-			if err = conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(10*time.Second)); err != nil {
-				log.Printf("ws error sending ping: %s\n", err)
-				break
-			}
-			timeout = time.NewTimer(10 * time.Second)
+	// Single writer goroutine, fed by outCh. Multiple producers (read loop,
+	// playback ticks, seek completions) are safe because conn.WriteJSON
+	// is not goroutine-safe but the channel serializes us to one writer.
+	c := &connectionState{
+		conn:   conn,
+		params: defaultParams,
+		outCh:  make(chan messageOut, 64),
+	}
+	c.measurer, _ = makeManualMeasurer(c.params.N, c.params.N0, *c.params.KAct, *c.params.LAct, c.params.N0*c.params.SigmaM)
+	c.estimator = kalman.NewKalmanFilter(c.params.N, c.params.N0, c.params.SigmaK0, c.params.SigmaK, c.params.SigmaM)
 
-			select {
-			case <-pingTime.C:
-				timeout.Stop()
-			case <-timeout.C:
-				log.Println("ping timeout")
-				pingTime.Stop()
-				if err = conn.Close(); err != nil {
-					log.Printf("Error closing connection: %s\n", err)
-				}
-				break
-			}
+	closing := make(chan struct{})
+	go writeLoop(conn, c.outCh, closing)
+
+	// Initial message: params + state + scenarios.
+	scenarios := scenarioPicks()
+	initState := state{K: c.estimator.K(), L: c.estimator.L(), P: c.estimator.P()}
+	mode := c.estimator.Mode().String()
+	nis := c.estimator.NIS()
+	converged := c.estimator.Converged()
+	c.outCh <- messageOut{
+		Params:    &c.params,
+		State:     &initState,
+		Scenarios: &scenarios,
+		Mode:      &mode,
+		NIS:       &nis,
+		Converged: &converged,
+	}
+
+	// Ping-pong goroutine (unchanged in spirit; tolerant of conn closure).
+	startPinger(conn)
+
+	// Incoming-message channel; the read goroutine pushes parsed messages
+	// onto it so the main loop can select against tickers too.
+	inCh := make(chan messageIn, 16)
+	go readLoop(conn, inCh, closing)
+
+	var playTicker *time.Ticker
+	defer func() {
+		close(closing)
+		if playTicker != nil {
+			playTicker.Stop()
 		}
-		log.Println("Stopping ping")
+		if c.pb != nil {
+			c.pb.cancelSeek()
+		}
 	}()
-	conn.SetPongHandler(func(appData string) error {
-		timeout.Stop()
-		return nil
-	})
-
-	// Read messages from the client and receive control messages
-	/*
-		1. Receive websocket message, determine type
-		2. If type is params:
-		   a. stop/close any current sim (send a nil measurement)
-		   b. initialize a new sim
-		   c. send reset command to client
-		3. If type is measure:
-		   a. create a measurement according to source
-		   b. send to filter
-		   c. send result to client
-	*/
-	var (
-		msgIn         messageIn
-		msgOut        messageOut
-		cmd           measureCmd
-		myMeasurement measurement
-		myParams      = defaultParams
-		myMeasurer, _ = makeManualMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
-		myEstimator   = kalman.NewKalmanFilter(myParams.N, myParams.N0, myParams.SigmaK0, myParams.SigmaK, myParams.SigmaM)
-	)
-
-	// Send initial params
-	msgOut = messageOut{
-		&myParams,
-		nil,
-		&state{
-			K: myEstimator.K(),
-			L: myEstimator.L(),
-			P: myEstimator.P(),
-		},
-	}
-	if err = conn.WriteJSON(msgOut); err != nil {
-		log.Printf("Error writing params to websocket: %s\n", err)
-		return
-	}
-	msgOut.Params = nil
 
 	log.Println("Listening for messages from a new client")
 	for {
-		if err = conn.ReadJSON(&msgIn); err != nil {
-			log.Printf("Error reading from websocket: %s\n", err)
-			break
+		var tickC <-chan time.Time
+		if playTicker != nil {
+			tickC = playTicker.C
 		}
-		timeout.Stop() // Stop the timeout if we get a message, not just a pong
-
-		// Extract any new parameters
-		if msgIn.Params != nil {
-			myParams = *msgIn.Params
-			msgIn.Params = nil
-			msgOut.Params = &myParams
-			log.Printf("Received params %v\n", myParams)
-
-			switch myParams.Source {
-			case manual:
-				myMeasurer, _ = makeManualMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
-				log.Println("Set Manual measurer")
-			case random:
-				myMeasurer, _ = makeRandomMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
-				log.Println("Set Random measurer")
-			case actual:
-				/*
-					myParams.N = 3
-					myMeasurer, err = makeActualMeasurer()
-					if err != nil {
-						log.Printf("Error connecting to MPU: %s, setting Random measurer\n", err)
-						myMeasurer, _ = makeManualMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
-					}
-				*/
-			case file: // TODO: implement
-			default:
-				myMeasurer, _ = makeManualMeasurer(myParams.N, myParams.N0, *myParams.KAct, *myParams.LAct, myParams.N0*myParams.SigmaM)
-				log.Printf("Received bad source: %d, setting Manual measurer\n", myParams.Source)
-				break
+		select {
+		case msg, ok := <-inCh:
+			if !ok {
+				return
 			}
-
-			myEstimator = kalman.NewKalmanFilter(myParams.N, myParams.N0, myParams.SigmaK0, myParams.SigmaK, myParams.SigmaM)
-			msgOut.State = &state{
-				K: myEstimator.K(),
-				L: myEstimator.L(),
-				P: myEstimator.P(),
+			playTicker = handleMessage(c, msg, playTicker)
+		case <-tickC:
+			if c.pb != nil && c.pb.playing && !c.pb.isSeeking() {
+				doTick(c)
+				if c.pb.step >= len(c.pb.gens) {
+					c.pb.playing = false
+					playTicker.Stop()
+					playTicker = nil
+					pushPlaybackStatus(c)
+				}
 			}
-			log.Printf("Sending params %v and initial state\n", myParams)
 		}
-
-		// Return any requested measurements
-		if msgIn.Measure != nil {
-			cmd = *msgIn.Measure
-			msgIn.Measure = nil
-			log.Printf("Received raw measurement %v\n", cmd)
-
-			myMeasurement = myMeasurer(cmd.A)
-			msgOut.Measurement = &myMeasurement
-			log.Printf("Sending measurement %v\n", myMeasurement)
-		}
-
-		// Perform any state estimations with the Kalman Filter
-		if msgIn.Estimate != nil {
-			nn := msgIn.Estimate.NN
-			msgIn.Estimate = nil
-			log.Printf("Estimating: %3.1f\n", nn)
-
-			myEstimator.U <- kalman.Matrix{myMeasurement}
-			myEstimator.Z <- nn
-			msgOut.State = &state{
-				K: myEstimator.K(),
-				L: myEstimator.L(),
-				P: myEstimator.P(),
-			}
-			log.Println("Sending state:")
-			log.Printf("K: %v\n", msgOut.State.K)
-			log.Printf("L: %v\n", msgOut.State.L)
-			log.Printf("P: %v\n", msgOut.State.P)
-		}
-
-		// Return message and clean up
-		if err = conn.WriteJSON(msgOut); err != nil {
-			log.Printf("Error writing to websocket: %s\n", err)
-		}
-		msgOut.Params = nil
-		msgOut.Measurement = nil
-		msgOut.State = nil
 	}
-	log.Println("Closing client")
+}
+
+// handleMessage processes one incoming client message. May reconfigure the
+// playback ticker as a side effect; returns the (possibly new) ticker.
+func handleMessage(c *connectionState, msg messageIn, ticker *time.Ticker) *time.Ticker {
+	if msg.Params != nil {
+		applyParams(c, *msg.Params)
+		pushParamsAndState(c)
+	}
+	if msg.Measure != nil && c.measurer != nil {
+		c.measurement = c.measurer(msg.Measure.A)
+		c.outCh <- messageOut{Measurement: &c.measurement}
+	}
+	if msg.Estimate != nil {
+		nn := msg.Estimate.NN
+		// Drain stale Done so the post-Z read is fresh.
+		select {
+		case <-c.estimator.Done:
+		default:
+		}
+		c.estimator.U <- kalman.Matrix{c.measurement}
+		c.estimator.Z <- nn
+		<-c.estimator.Done
+		pushManualState(c)
+	}
+	if msg.LoadScenario != nil {
+		pb, err := loadScenario(*msg.LoadScenario)
+		if err != nil {
+			log.Printf("loadScenario %q: %v", *msg.LoadScenario, err)
+			return ticker
+		}
+		if c.pb != nil {
+			c.pb.cancelSeek()
+		}
+		c.pb = pb
+		c.playbackRng = rand.New(rand.NewSource(pb.script.Seed))
+		c.params = pb.asParams()
+		if ticker != nil {
+			ticker.Stop()
+			ticker = nil
+		}
+		pushParamsAndState(c)
+		pushPlaybackStatus(c)
+	}
+	if msg.PlaybackCmd != nil && c.pb != nil {
+		ticker = applyPlaybackCmd(c, *msg.PlaybackCmd, ticker)
+	}
+	if msg.SetMode != nil && c.pb != nil {
+		switch *msg.SetMode {
+		case "LCK":
+			c.pb.kf.ForceLock()
+		case "CAL":
+			c.pb.kf.ForceUnlock()
+		}
+		pushPlaybackState(c, nil)
+	}
+	return ticker
+}
+
+func applyParams(c *connectionState, p params) {
+	c.params = p
+	switch p.Source {
+	case manual:
+		c.measurer, _ = makeManualMeasurer(p.N, p.N0, *p.KAct, *p.LAct, p.N0*p.SigmaM)
+	case random:
+		c.measurer, _ = makeRandomMeasurer(p.N, p.N0, *p.KAct, *p.LAct, p.N0*p.SigmaM)
+	case scenarioSrc:
+		// scenario source uses the playback object; no measurer assigned.
+		c.measurer = nil
+	case actual:
+		// MPU9250 path is currently commented out in measurer.go; leave
+		// measurer at its previous value rather than nilling it.
+	case file:
+		// TODO: implement file source.
+	default:
+		c.measurer, _ = makeManualMeasurer(p.N, p.N0, *p.KAct, *p.LAct, p.N0*p.SigmaM)
+		log.Printf("Received bad source: %d, setting Manual measurer", p.Source)
+	}
+	// Rebuild estimator. For scenario source, the playback object owns its
+	// own filter so the top-level estimator is unused there but we keep
+	// it valid for manual/random source transitions.
+	c.estimator = kalman.NewKalmanFilter(p.N, p.N0, p.SigmaK0, p.SigmaK, p.SigmaM)
+	if p.MaxSigmaK > 0 || p.MaxSigmaL > 0 {
+		c.estimator.SetConvergenceThresholds(p.MaxSigmaK, p.MaxSigmaL)
+	}
+	if p.StateMachineOn && p.LockHysteresis > 0 && p.NISWindow > 0 && p.NISThreshold > 0 {
+		c.estimator.EnableStateMachine(p.LockHysteresis, p.NISWindow, p.NISThreshold)
+	}
+}
+
+// applyPlaybackCmd updates the playback state per the command and returns
+// the (possibly new) ticker that doTick will fire on.
+func applyPlaybackCmd(c *connectionState, cmd playbackCmd, ticker *time.Ticker) *time.Ticker {
+	switch cmd.Action {
+	case "play":
+		if cmd.RateHz > 0 {
+			c.pb.rateHz = cmd.RateHz
+		}
+		c.pb.playing = true
+		ticker = restartTicker(ticker, c.pb.rateHz)
+		pushPlaybackStatus(c)
+	case "pause":
+		c.pb.playing = false
+		if ticker != nil {
+			ticker.Stop()
+		}
+		ticker = nil
+		pushPlaybackStatus(c)
+	case "step":
+		c.pb.playing = false
+		if ticker != nil {
+			ticker.Stop()
+		}
+		ticker = nil
+		if c.pb.step < len(c.pb.gens) && !c.pb.isSeeking() {
+			doTick(c)
+		}
+		pushPlaybackStatus(c)
+	case "setRate":
+		if cmd.RateHz > 0 {
+			c.pb.rateHz = cmd.RateHz
+		}
+		if c.pb.playing {
+			ticker = restartTicker(ticker, c.pb.rateHz)
+		}
+		pushPlaybackStatus(c)
+	case "seek":
+		c.pb.playing = false
+		if ticker != nil {
+			ticker.Stop()
+		}
+		ticker = nil
+		// Seek runs in its own goroutine; on completion we resync the rng
+		// and push a state update via outCh (writer goroutine handles it).
+		target := cmd.Step
+		c.pb.seekTo(target, func(success bool) {
+			c.playbackRng = rand.New(rand.NewSource(c.pb.script.Seed))
+			// Advance rng to match the post-seek step count. The seek goroutine
+			// drives the filter with a fresh rng of its own; this just keeps
+			// our outer rng in sync for any follow-up play ticks.
+			for i := 0; i < c.pb.step; i++ {
+				if c.pb.gens[i].Kind == scenario.KindPerturb {
+					continue
+				}
+				// One call per measurement step matches SynthMeasurement's
+				// rng consumption (n NormFloat64 calls, but we don't care
+				// about exact byte parity here — we just need any deterministic
+				// state for follow-up play to be reproducible.).
+				_ = c.playbackRng.Float64()
+			}
+			pushPlaybackState(c, nil)
+			pushPlaybackStatus(c)
+		})
+		pushPlaybackStatus(c)
+	case "reset":
+		c.pb.playing = false
+		if ticker != nil {
+			ticker.Stop()
+		}
+		ticker = nil
+		c.pb.reset()
+		c.playbackRng = rand.New(rand.NewSource(c.pb.script.Seed))
+		c.params = c.pb.asParams()
+		pushParamsAndState(c)
+		pushPlaybackStatus(c)
+	}
+	return ticker
+}
+
+func restartTicker(old *time.Ticker, rateHz int) *time.Ticker {
+	if old != nil {
+		old.Stop()
+	}
+	if rateHz < 1 {
+		rateHz = 1
+	}
+	if rateHz > 100 {
+		rateHz = 100 // UI render cap; seek bypasses this.
+	}
+	return time.NewTicker(time.Second / time.Duration(rateHz))
+}
+
+// doTick advances the playback by one step and pushes a state update.
+func doTick(c *connectionState) {
+	g, m, ok := c.pb.tickOne(c.playbackRng)
+	if !ok {
+		return
+	}
+	// For perturb, truth changed — also refresh params on the wire.
+	if g.Kind == scenario.KindPerturb {
+		c.params = c.pb.asParams()
+		c.outCh <- messageOut{Params: &c.params}
+	}
+	pushPlaybackState(c, m)
+}
+
+// pushPlaybackState pushes a messageOut with the current filter state,
+// mode/nis/converged, and playback status. If m is non-nil it's included
+// as a measurement too (so the existing magXS plot still updates).
+func pushPlaybackState(c *connectionState, m []float64) {
+	st, mode, nis, conv := c.pb.buildState()
+	status := c.pb.status()
+	out := messageOut{
+		State:     &st,
+		Mode:      &mode,
+		NIS:       &nis,
+		Converged: &conv,
+		Playback:  &status,
+	}
+	if m != nil {
+		meas := measurement(m)
+		out.Measurement = &meas
+	}
+	c.outCh <- out
+}
+
+func pushPlaybackStatus(c *connectionState) {
+	if c.pb == nil {
+		return
+	}
+	status := c.pb.status()
+	c.outCh <- messageOut{Playback: &status}
+}
+
+func pushParamsAndState(c *connectionState) {
+	if c.pb != nil {
+		st, mode, nis, conv := c.pb.buildState()
+		c.outCh <- messageOut{
+			Params:    &c.params,
+			State:     &st,
+			Mode:      &mode,
+			NIS:       &nis,
+			Converged: &conv,
+		}
+		return
+	}
+	st := state{K: c.estimator.K(), L: c.estimator.L(), P: c.estimator.P()}
+	mode := c.estimator.Mode().String()
+	nis := c.estimator.NIS()
+	conv := c.estimator.Converged()
+	c.outCh <- messageOut{
+		Params:    &c.params,
+		State:     &st,
+		Mode:      &mode,
+		NIS:       &nis,
+		Converged: &conv,
+	}
+}
+
+func pushManualState(c *connectionState) {
+	st := state{K: c.estimator.K(), L: c.estimator.L(), P: c.estimator.P()}
+	mode := c.estimator.Mode().String()
+	nis := c.estimator.NIS()
+	conv := c.estimator.Converged()
+	c.outCh <- messageOut{
+		State:     &st,
+		Mode:      &mode,
+		NIS:       &nis,
+		Converged: &conv,
+	}
+}
+
+func readLoop(conn *websocket.Conn, inCh chan<- messageIn, closing <-chan struct{}) {
+	defer close(inCh)
+	for {
+		var msg messageIn
+		if err := conn.ReadJSON(&msg); err != nil {
+			log.Printf("Error reading from websocket: %v", err)
+			return
+		}
+		select {
+		case inCh <- msg:
+		case <-closing:
+			return
+		}
+	}
+}
+
+func writeLoop(conn *websocket.Conn, outCh <-chan messageOut, closing <-chan struct{}) {
+	for {
+		select {
+		case msg, ok := <-outCh:
+			if !ok {
+				return
+			}
+			if err := conn.WriteJSON(msg); err != nil {
+				log.Printf("Error writing to websocket: %v", err)
+				return
+			}
+		case <-closing:
+			return
+		}
+	}
+}
+
+func startPinger(conn *websocket.Conn) {
+	go func() {
+		t := time.NewTicker(5 * time.Second)
+		defer t.Stop()
+		for range t.C {
+			if err := conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(10*time.Second)); err != nil {
+				log.Printf("ws error sending ping: %s", err)
+				return
+			}
+		}
+	}()
+	conn.SetPongHandler(func(string) error { return nil })
 }
