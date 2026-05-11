@@ -1,4 +1,11 @@
-package main
+// Package scenario defines the YAML scenario format consumed by the
+// magkal test harnesses (cmd/replay and cmd/websim) and the pure
+// functions that turn a scenario into a sequence of (theta, phi)
+// directions and synthesized magnetometer measurements.
+//
+// The package is internal because it's dev-time tooling, not part of
+// the reusable pkg/kalman API external consumers depend on.
+package scenario
 
 import (
 	"fmt"
@@ -94,7 +101,8 @@ type Script struct {
 	Steps  []Step    `yaml:"steps"`
 }
 
-func loadScript(path string) (*Script, error) {
+// Load reads, parses, and validates a scenario YAML from disk.
+func Load(path string) (*Script, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
@@ -103,13 +111,26 @@ func loadScript(path string) (*Script, error) {
 	if err := yaml.Unmarshal(data, &s); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
-	if err := s.validate(); err != nil {
+	if err := s.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid %s: %w", path, err)
 	}
 	return &s, nil
 }
 
-func (s *Script) validate() error {
+// Parse parses a scenario YAML from an in-memory byte slice. Useful for
+// tests and for clients that already have the bytes.
+func Parse(data []byte) (*Script, error) {
+	var s Script
+	if err := yaml.Unmarshal(data, &s); err != nil {
+		return nil, fmt.Errorf("parse: %w", err)
+	}
+	if err := s.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid: %w", err)
+	}
+	return &s, nil
+}
+
+func (s *Script) Validate() error {
 	if s.Truth.N < 1 || s.Truth.N > 3 {
 		return fmt.Errorf("truth.n must be 1, 2, or 3 (got %d)", s.Truth.N)
 	}

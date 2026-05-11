@@ -1,4 +1,4 @@
-package main
+package scenario
 
 import (
 	"math"
@@ -7,15 +7,13 @@ import (
 
 const deg = math.Pi / 180
 
-// synthMeasurement turns a true-direction (theta, phi in degrees) plus the
+// SynthMeasurement turns a true-direction (theta, phi in degrees) plus the
 // truth calibration (k, l, n0) and noise std-dev into a noisy raw
 // magnetometer reading m of length n. The model is the inverse of the
 // filter's: n = k*(m - l), so m = n/k + l + noise.
 //
-// Adapted from cmd/websim/measurer.go's makeManualMeasurer; kept here so
-// cmd/replay can evolve independently. We'll factor a shared package once
-// websim wants to play the same scripts.
-func synthMeasurement(n int, theta, phi float64, k, l []float64, n0, noise float64, rng *rand.Rand) []float64 {
+// Originally adapted from cmd/websim/measurer.go's makeManualMeasurer.
+func SynthMeasurement(n int, theta, phi float64, k, l []float64, n0, noise float64, rng *rand.Rand) []float64 {
 	t := theta * deg
 	p := phi * deg
 	m := make([]float64, n)

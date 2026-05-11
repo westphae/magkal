@@ -1,4 +1,4 @@
-package main
+package scenario
 
 import (
 	"math"
@@ -11,27 +11,34 @@ type Direction struct {
 	Phi   float64
 }
 
-// stepKind names which YAML step generated a Direction; flows into the record.
-type stepKind string
+// StepKind names which YAML step produced a Generated entry. For Perturb,
+// no direction is generated but a marker entry flows through so consumers
+// can detect and apply the truth mutation in the same indexed stream.
+type StepKind string
 
 const (
-	kindSweep     stepKind = "sweep"
-	kindHold      stepKind = "hold"
-	kindRandom    stepKind = "random"
-	kindBodyFrame stepKind = "body_frame"
+	KindSweep     StepKind = "sweep"
+	KindHold      StepKind = "hold"
+	KindRandom    StepKind = "random"
+	KindBodyFrame StepKind = "body_frame"
+	KindPerturb   StepKind = "perturb"
 )
 
-// Generated is one (kind, label, direction) triple emitted by an iterator.
+// Generated is one entry in the expanded scenario stream. For measurement
+// kinds (everything except Perturb) Dir is meaningful and consumers should
+// synthesize a measurement at that direction. For Perturb, DeltaL carries
+// the truth mutation; consumers apply it and skip the filter update.
 type Generated struct {
-	Kind  stepKind
-	Label string
-	Dir   Direction
+	Kind   StepKind
+	Label  string
+	Dir    Direction
+	DeltaL []float64 // populated only when Kind == KindPerturb
 }
 
-// expand turns one YAML Step into the sequence of Generated directions it
+// Expand turns one YAML Step into the sequence of Generated entries it
 // produces, in order. Uses rng for any randomness so the script's seed
 // fully determines output. Takes Truth so body_frame can read inclination.
-func expand(s Step, t Truth, rng *rand.Rand) []Generated {
+func Expand(s Step, t Truth, rng *rand.Rand) []Generated {
 	switch {
 	case s.Sweep != nil:
 		return expandSweep(s.Sweep, t.N)
@@ -41,8 +48,26 @@ func expand(s Step, t Truth, rng *rand.Rand) []Generated {
 		return expandRandom(s.Random, t.N, rng)
 	case s.BodyFrame != nil:
 		return expandBodyFrame(s.BodyFrame, t, rng)
+	case s.Perturb != nil:
+		return []Generated{{
+			Kind:   KindPerturb,
+			Label:  s.Perturb.Label,
+			DeltaL: append([]float64(nil), s.Perturb.DeltaL...),
+		}}
 	}
 	return nil
+}
+
+// ExpandAll runs Expand over every step in the script in order, returning
+// the full flat stream. RNG is seeded from script.Seed so repeated calls
+// produce identical output.
+func ExpandAll(s *Script) []Generated {
+	rng := rand.New(rand.NewSource(s.Seed))
+	out := []Generated{}
+	for _, st := range s.Steps {
+		out = append(out, Expand(st, s.Truth, rng)...)
+	}
+	return out
 }
 
 func expandSweep(s *SweepStep, n int) []Generated {
@@ -56,7 +81,7 @@ func expandSweep(s *SweepStep, n int) []Generated {
 	for _, theta := range thetaSteps {
 		for _, phi := range phiSteps {
 			out = append(out, Generated{
-				Kind:  kindSweep,
+				Kind:  KindSweep,
 				Label: s.Label,
 				Dir:   Direction{Theta: theta, Phi: phi},
 			})
@@ -100,7 +125,7 @@ func expandHold(s *HoldStep, n int, rng *rand.Rand) []Generated {
 			phi = s.At[1] + s.JitterDeg*rng.NormFloat64()
 		}
 		out = append(out, Generated{
-			Kind:  kindHold,
+			Kind:  KindHold,
 			Label: s.Label,
 			Dir:   Direction{Theta: theta, Phi: phi},
 		})
@@ -124,11 +149,11 @@ func expandBodyFrame(s *BodyFrameStep, t Truth, rng *rand.Rand) []Generated {
 		x, y, z := nedFieldToBody(I, psi, pit, rol)
 		// (x,y,z) is a unit vector. Convert to (theta, phi) such that
 		// (cos θ cos φ, sin θ cos φ, sin φ) = (x, y, z), which is the
-		// convention measure.go expects.
+		// convention SynthMeasurement expects.
 		phi := math.Asin(z)
 		theta := math.Atan2(y, x)
 		out = append(out, Generated{
-			Kind: kindBodyFrame, Label: s.Label,
+			Kind: KindBodyFrame, Label: s.Label,
 			Dir: Direction{Theta: theta * 180 / math.Pi, Phi: phi * 180 / math.Pi},
 		})
 	}
@@ -174,7 +199,7 @@ func expandRandom(s *RandomStep, n int, rng *rand.Rand) []Generated {
 			phi = math.Asin(2*rng.Float64()-1) * 180 / math.Pi
 		}
 		out = append(out, Generated{
-			Kind:  kindRandom,
+			Kind:  KindRandom,
 			Label: s.Label,
 			Dir:   Direction{Theta: theta, Phi: phi},
 		})

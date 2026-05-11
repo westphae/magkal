@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 
+	"github.com/westphae/magkal/internal/scenario"
 	"github.com/westphae/magkal/pkg/kalman"
 )
 
@@ -40,7 +41,7 @@ func main() {
 		log.SetOutput(io.Discard)
 	}
 
-	script, err := loadScript(flag.Arg(0))
+	script, err := scenario.Load(flag.Arg(0))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "replay: %v\n", err)
 		os.Exit(1)
@@ -51,7 +52,7 @@ func main() {
 	}
 }
 
-func run(s *Script) error {
+func run(s *scenario.Script) error {
 	n := s.Truth.N
 	rng := rand.New(rand.NewSource(s.Seed))
 	kf := kalman.NewKalmanFilter(n, s.Truth.N0, s.Filter.SigmaK0, s.Filter.SigmaK, s.Filter.SigmaM)
@@ -118,7 +119,7 @@ func run(s *Script) error {
 				st.Perturb.Label, st.Perturb.DeltaL, s.Truth.L)
 			continue
 		}
-		gens := expand(st, s.Truth, rng)
+		gens := scenario.Expand(st, s.Truth, rng)
 		for _, g := range gens {
 			if g.Label != segLabel {
 				flushSegment()
@@ -127,7 +128,7 @@ func run(s *Script) error {
 				segLastRecord = nil
 			}
 
-			m := synthMeasurement(n, g.Dir.Theta, g.Dir.Phi, s.Truth.K, s.Truth.L, s.Truth.N0, s.Truth.Noise, rng)
+			m := scenario.SynthMeasurement(n, g.Dir.Theta, g.Dir.Phi, s.Truth.K, s.Truth.L, s.Truth.N0, s.Truth.Noise, rng)
 
 			// Drain any stale Done signal from a prior step before sending Z so the
 			// post-step <-kf.Done can't pick up a stale signal.
@@ -158,7 +159,7 @@ func run(s *Script) error {
 	return nil
 }
 
-func buildRecord(step int, g Generated, m []float64, z float64, kf *kalman.Filter, t *Truth) *Record {
+func buildRecord(step int, g scenario.Generated, m []float64, z float64, kf *kalman.Filter, t *scenario.Truth) *Record {
 	n := t.N
 	kEst := kf.K()
 	lEst := kf.L()
