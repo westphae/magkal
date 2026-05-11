@@ -97,7 +97,9 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	c := &connectionState{
 		conn:   conn,
 		params: defaultParams,
-		outCh:  make(chan messageOut, 64),
+		// Small buffer keeps the pause-to-visible-pause lag bounded; at
+		// displayCapHz the worst-case backlog is ~1 second.
+		outCh: make(chan messageOut, 16),
 	}
 	c.measurer, _ = makeManualMeasurer(c.params.N, c.params.N0, *c.params.KAct, *c.params.LAct, c.params.N0*c.params.SigmaM)
 	c.estimator = kalman.NewKalmanFilter(c.params.N, c.params.N0, c.params.SigmaK0, c.params.SigmaK, c.params.SigmaM)
@@ -268,6 +270,7 @@ func applyPlaybackCmd(c *connectionState, cmd playbackCmd, ticker *time.Ticker) 
 		if cmd.RateHz > 0 {
 			c.pb.rateHz = cmd.RateHz
 		}
+		c.pb.recomputeSendEvery()
 		c.pb.playing = true
 		ticker = restartTicker(ticker, c.pb.rateHz)
 		pushPlaybackStatus(c)
@@ -292,6 +295,7 @@ func applyPlaybackCmd(c *connectionState, cmd playbackCmd, ticker *time.Ticker) 
 		if cmd.RateHz > 0 {
 			c.pb.rateHz = cmd.RateHz
 		}
+		c.pb.recomputeSendEvery()
 		if c.pb.playing {
 			ticker = restartTicker(ticker, c.pb.rateHz)
 		}
@@ -346,24 +350,39 @@ func restartTicker(old *time.Ticker, rateHz int) *time.Ticker {
 	if rateHz < 1 {
 		rateHz = 1
 	}
-	if rateHz > 100 {
-		rateHz = 100 // UI render cap; seek bypasses this.
+	if rateHz > 1000 {
+		rateHz = 1000 // sanity cap. Display is downsampled to displayCapHz.
 	}
 	return time.NewTicker(time.Second / time.Duration(rateHz))
 }
 
-// doTick advances the playback by one step and pushes a state update.
+// doTick advances the playback by one step and (conditionally) pushes a
+// state update. To keep the client renderable when rateHz is high, sends
+// are downsampled to ~displayCapHz; segment boundaries, perturb events,
+// and the final step always push so the user doesn't miss them.
 func doTick(c *connectionState) {
 	g, m, ok := c.pb.tickOne(c.playbackRng)
 	if !ok {
 		return
 	}
-	// For perturb, truth changed — also refresh params on the wire.
+	// For perturb, truth changed — refresh params on the wire and always
+	// push state so the UI shows the new environment immediately.
 	if g.Kind == scenario.KindPerturb {
 		c.params = c.pb.asParams()
 		c.outCh <- messageOut{Params: &c.params}
+		pushPlaybackState(c, m)
+		c.pb.sinceLastSend = 0
+		c.pb.lastSentLabel = g.Label
+		return
 	}
-	pushPlaybackState(c, m)
+	c.pb.sinceLastSend++
+	atBoundary := g.Label != c.pb.lastSentLabel
+	atEnd := c.pb.step >= len(c.pb.gens)
+	if c.pb.sinceLastSend >= c.pb.sendEvery || atBoundary || atEnd {
+		pushPlaybackState(c, m)
+		c.pb.sinceLastSend = 0
+		c.pb.lastSentLabel = g.Label
+	}
 }
 
 // pushPlaybackState pushes a messageOut with the current filter state,

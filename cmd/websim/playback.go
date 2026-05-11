@@ -41,6 +41,14 @@ func scenarioPicks() []string {
 	return out
 }
 
+// displayCapHz caps how often state pushes go to the client. The filter
+// ticks at the user-selected rateHz server-side; sends are downsampled
+// so the websocket and browser-side render loop can keep up. The user
+// reported that 100 Hz play ended up rendering at ~4 Hz because the
+// queue clogged with state messages; this divisor keeps the queue
+// drained at a rate the client can actually consume.
+const displayCapHz = 10
+
 // playback owns a loaded scenario and its expanded direction stream, plus
 // the per-step iteration state. Methods are intended to run on the main
 // connection goroutine; an internal seekCtx cancels in-flight seeks when
@@ -55,6 +63,14 @@ type playback struct {
 	playing bool
 	rateHz  int
 
+	// Display-rate downsampling. sendEvery is recomputed when rateHz
+	// changes; sinceLastSend counts ticks since the last state push.
+	// lastSentLabel forces a send when the segment label changes so the
+	// user always sees transitions even at high rates.
+	sendEvery     int
+	sinceLastSend int
+	lastSentLabel string
+
 	// Seek concurrency. seekCancel is non-nil while a seek is running;
 	// invoking it preempts that seek so a new one can start.
 	mu         sync.Mutex
@@ -62,6 +78,20 @@ type playback struct {
 	seekCancel context.CancelFunc
 
 	kf *kalman.Filter
+}
+
+// recomputeSendEvery updates the send-every-Nth gate based on the
+// current rateHz. Called by loadScenario, setRate, and play.
+func (p *playback) recomputeSendEvery() {
+	if p.rateHz <= displayCapHz {
+		p.sendEvery = 1
+	} else {
+		p.sendEvery = p.rateHz / displayCapHz
+		if p.sendEvery < 1 {
+			p.sendEvery = 1
+		}
+	}
+	p.sinceLastSend = 0
 }
 
 // loadScenario reads & parses the YAML file, pre-expands the direction
@@ -80,6 +110,7 @@ func loadScenario(name string) (*playback, error) {
 		loaded: name,
 		rateHz: 10,
 	}
+	pb.recomputeSendEvery()
 	pb.rebuildFilter()
 	return pb, nil
 }
