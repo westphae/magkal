@@ -177,16 +177,23 @@ func handleMessage(c *connectionState, msg messageIn, ticker *time.Ticker) *time
 		c.outCh <- messageOut{Measurement: &c.measurement}
 	}
 	if msg.Estimate != nil {
-		nn := msg.Estimate.NN
-		// Drain stale Done so the post-Z read is fresh.
-		select {
-		case <-c.estimator.Done:
-		default:
+		// Need a real measurement to drive the filter. The scenario path
+		// pushes measurements directly through pb.kf; estimates here are
+		// only meaningful for manual/random sources where a prior Measure
+		// command populated c.measurement.
+		if len(c.measurement) == 0 {
+			log.Printf("Estimate received with no prior measurement; ignoring")
+		} else {
+			nn := msg.Estimate.NN
+			select {
+			case <-c.estimator.Done:
+			default:
+			}
+			c.estimator.U <- kalman.Matrix{c.measurement}
+			c.estimator.Z <- nn
+			<-c.estimator.Done
+			pushManualState(c)
 		}
-		c.estimator.U <- kalman.Matrix{c.measurement}
-		c.estimator.Z <- nn
-		<-c.estimator.Done
-		pushManualState(c)
 	}
 	if msg.LoadScenario != nil {
 		pb, err := loadScenario(*msg.LoadScenario)

@@ -61,6 +61,11 @@ vm = new Vue({
             self.ws.send(JSON.stringify({"estimate": msg}));
         });
         dispatch.on("measurement", function() {
+            // In scenario mode the server already drove the filter for this
+            // measurement; we just received the raw m for the magXS plot.
+            // Auto-firing an estimate_request here would push a stale
+            // measurement through the legacy c.estimator path on the server.
+            if (parseInt(self.source) === 4) { return; }
             dispatch.call("estimate_request", this, {"nn": self.n0 * self.n0});
         });
     },
