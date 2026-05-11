@@ -19,6 +19,10 @@ filter:
   sigmaK0: 0.25
   sigmaK:  1.0e-8
   sigmaM:  1.0e-3
+  # Tunable convergence thresholds. Re-ground against real hardware once
+  # we have MEMS-magnetometer noise data.
+  maxSigmaK: 1.0e-3   # 0.1% on scale factor
+  maxSigmaL: 5.0      # 5 nT, ~1e-4 of n0
 
 seed: 42
 

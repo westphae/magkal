@@ -13,6 +13,13 @@ filter:
   sigmaK0: 0.25
   sigmaK:  1.0e-8
   sigmaM:  1.0e-3  # fraction of n0
+  # With phi=0 throughout, the z-axis is never observed, so the z-axis
+  # P-diagonals stay near their initial high values and Converged() must
+  # return false regardless of how long the run is. This is the
+  # regression test for the criterion correctly rejecting an
+  # under-observed axis.
+  maxSigmaK: 1.0e-3
+  maxSigmaL: 5.0
 
 seed: 42
 

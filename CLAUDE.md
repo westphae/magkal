@@ -158,13 +158,16 @@ follow-up design work; Claude should not try to resolve them autonomously.
   `cmd/websim/measurer.go` is the obvious re-entry point) and compare
   observed drift rates. The simulated drift may overstate or understate
   what a real sensor's noise distribution produces.
-- **Define a quantitative "calibration satisfactory" criterion.** Needs
-  two signals composed: a confidence threshold (`tr(P)` or per-axis
-  `P_diag` below some bound) AND a coverage criterion (samples
-  distributed across enough of the unit sphere — the shelved aggregator
-  on branch `aggregator` had the right instinct here even though it was
-  applied to the wrong problem). Output is a `Converged() bool` (or
-  similar) on `kalman.Filter`.
+- **Tune `Converged()` thresholds against real-hardware noise.** A first
+  cut of the criterion is implemented as `(*Filter).Converged()` with
+  per-axis `P`-diagonal bounds (`maxSigmaK`, `maxSigmaL`) set via
+  `SetConvergenceThresholds`. The `1e-3` / `5.0` values in
+  `cmd/replay/scripts/cruise_realistic.yaml` are placeholders chosen
+  for the simulation. Real defaults depend on (a) MEMS-magnetometer
+  noise figures and (b) the operational heading-accuracy target. Owner
+  should decide the latter and verify the former. If the diagonal
+  criterion turns out to lie about convergence under degenerate
+  observation, the follow-up is max-eigenvalue(P) instead.
 - **Add a lock/unlock state machine to handle the in-flight magnetic
   environment.** When `Converged()`, freeze `(k, l)` and stop updating.
   On each subsequent measurement, compute the would-be innovation

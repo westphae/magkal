@@ -11,21 +11,22 @@ import (
 // Record is one filter step's observable state. All slices have length n
 // except p_diag which has length 2n (interleaved [pk0, pl0, pk1, pl1, ...]).
 type Record struct {
-	Step   int
-	Label  string
-	Action string
-	Theta  float64
-	Phi    float64
-	M      []float64
-	NHat   []float64
-	Y      float64
-	S      float64
-	K      []float64
-	L      []float64
-	PDiag  []float64
-	KErr   []float64
-	LErr   []float64
-	TrP    float64
+	Step      int
+	Label     string
+	Action    string
+	Theta     float64
+	Phi       float64
+	M         []float64
+	NHat      []float64
+	Y         float64
+	S         float64
+	K         []float64
+	L         []float64
+	PDiag     []float64
+	KErr      []float64
+	LErr      []float64
+	TrP       float64
+	Converged bool // result of (*Filter).Converged() at this step; meaningless if thresholds unset
 }
 
 // Writer abstracts emitting a stream of Records. Both implementations are
@@ -40,11 +41,12 @@ type Writer interface {
 // --- Aligned text-table writer ----------------------------------------------
 
 type tableWriter struct {
-	w           io.Writer
-	n           int
-	lastLabel   string
-	headerEvery int // re-print header every N rows; 0 disables
-	rowsSince   int
+	w                  io.Writer
+	n                  int
+	lastLabel          string
+	headerEvery        int // re-print header every N rows; 0 disables
+	rowsSince          int
+	convergenceEnabled bool // if true, include a "conv" column
 }
 
 func newTableWriter(w io.Writer, n int) *tableWriter {
@@ -60,8 +62,11 @@ func (t *tableWriter) WriteHeader(n int, label string) error {
 		cols = append(cols, fmt.Sprintf("l%d", i))
 	}
 	cols = append(cols, "y", "tr(P)")
+	if t.convergenceEnabled {
+		cols = append(cols, "conv")
+	}
 	// Widths: tuned to keep numerical columns readable for n=3.
-	widths := tableWidths(n)
+	widths := tableWidths(n, t.convergenceEnabled)
 	var b strings.Builder
 	for i, c := range cols {
 		fmt.Fprintf(&b, "%*s", widths[i], c)
@@ -90,7 +95,7 @@ func (t *tableWriter) WriteRecord(r *Record) error {
 	}
 	t.rowsSince++
 
-	widths := tableWidths(t.n)
+	widths := tableWidths(t.n, t.convergenceEnabled)
 	cells := []string{
 		strconv.Itoa(r.Step),
 		r.Label,
@@ -104,6 +109,13 @@ func (t *tableWriter) WriteRecord(r *Record) error {
 		cells = append(cells, fmtF(r.L[i], 2))
 	}
 	cells = append(cells, fmtE(r.Y), fmtE(r.TrP))
+	if t.convergenceEnabled {
+		if r.Converged {
+			cells = append(cells, "yes")
+		} else {
+			cells = append(cells, "no")
+		}
+	}
 
 	var b strings.Builder
 	for i, c := range cells {
@@ -120,8 +132,8 @@ func (t *tableWriter) WriteRecord(r *Record) error {
 func (t *tableWriter) Close() error { return nil }
 
 // tableWidths returns the column widths for a table with n axes.
-// 4 fixed + n k-cols + n l-cols + 3 trailing.
-func tableWidths(n int) []int {
+// 4 fixed + n k-cols + n l-cols + 2 trailing (+ 1 conv if enabled).
+func tableWidths(n int, conv bool) []int {
 	widths := []int{6, 14, 7, 7}
 	for i := 0; i < n; i++ {
 		widths = append(widths, 8)
@@ -130,6 +142,9 @@ func tableWidths(n int) []int {
 		widths = append(widths, 9)
 	}
 	widths = append(widths, 11, 11)
+	if conv {
+		widths = append(widths, 5)
+	}
 	return widths
 }
 
@@ -147,9 +162,10 @@ func fmtE(v float64) string {
 // --- CSV writer -------------------------------------------------------------
 
 type csvWriter struct {
-	w        *csv.Writer
-	n        int
-	wroteHdr bool
+	w                  *csv.Writer
+	n                  int
+	wroteHdr           bool
+	convergenceEnabled bool
 }
 
 func newCSVWriter(w io.Writer, n int) *csvWriter {
@@ -185,6 +201,9 @@ func (c *csvWriter) WriteHeader(n int, label string) error {
 		cols = append(cols, fmt.Sprintf("lerr%d", i))
 	}
 	cols = append(cols, "trP")
+	if c.convergenceEnabled {
+		cols = append(cols, "converged")
+	}
 	return c.w.Write(cols)
 }
 
@@ -219,6 +238,13 @@ func (c *csvWriter) WriteRecord(r *Record) error {
 		row = append(row, csvF(v))
 	}
 	row = append(row, csvF(r.TrP))
+	if c.convergenceEnabled {
+		if r.Converged {
+			row = append(row, "1")
+		} else {
+			row = append(row, "0")
+		}
+	}
 	return c.w.Write(row)
 }
 

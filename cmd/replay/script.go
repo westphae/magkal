@@ -20,6 +20,10 @@ type FilterCfg struct {
 	SigmaK0 float64 `yaml:"sigmaK0"`
 	SigmaK  float64 `yaml:"sigmaK"`
 	SigmaM  float64 `yaml:"sigmaM"`
+	// Convergence thresholds for Converged(). Both default to 0 (disabled).
+	// MaxSigmaK is dimensionless; MaxSigmaL is in the same units as truth.n0.
+	MaxSigmaK float64 `yaml:"maxSigmaK,omitempty"`
+	MaxSigmaL float64 `yaml:"maxSigmaL,omitempty"`
 }
 
 type SweepStep struct {

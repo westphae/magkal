@@ -55,6 +55,10 @@ func run(s *Script) error {
 	n := s.Truth.N
 	rng := rand.New(rand.NewSource(s.Seed))
 	kf := kalman.NewKalmanFilter(n, s.Truth.N0, s.Filter.SigmaK0, s.Filter.SigmaK, s.Filter.SigmaM)
+	if s.Filter.MaxSigmaK > 0 || s.Filter.MaxSigmaL > 0 {
+		kf.SetConvergenceThresholds(s.Filter.MaxSigmaK, s.Filter.MaxSigmaL)
+	}
+	convergenceEnabled := s.Filter.MaxSigmaK > 0 && s.Filter.MaxSigmaL > 0
 
 	var w Writer
 	switch {
@@ -62,12 +66,14 @@ func run(s *Script) error {
 		w = nullWriter{}
 	case *flagCSV:
 		cw := newCSVWriter(os.Stdout, n)
+		cw.convergenceEnabled = convergenceEnabled
 		if err := cw.WriteHeader(n, ""); err != nil {
 			return err
 		}
 		w = cw
 	default:
 		tw := newTableWriter(os.Stdout, n)
+		tw.convergenceEnabled = convergenceEnabled
 		// No initial header; the first record's segment-change branch prints one.
 		w = tw
 	}
@@ -173,13 +179,14 @@ func buildRecord(step int, g Generated, m []float64, z float64, kf *kalman.Filte
 		Y:      z - sumNHat2,
 		// S not directly exposed by Filter; leave as 0 for now. Adding a getter
 		// would be the right follow-up if we want it for diagnostics.
-		S:     0,
-		K:     kEst,
-		L:     lEst,
-		PDiag: pDiag,
-		KErr:  kErr,
-		LErr:  lErr,
-		TrP:   trP,
+		S:         0,
+		K:         kEst,
+		L:         lEst,
+		PDiag:     pDiag,
+		KErr:      kErr,
+		LErr:      lErr,
+		TrP:       trP,
+		Converged: kf.Converged(),
 	}
 }
 
