@@ -384,6 +384,15 @@ func (k *Filter) EnableStateMachine(lockHysteresis, nisWindow int, nisThreshold 
 	k.nisThreshold = nisThreshold
 }
 
+// DisableStateMachine turns off the state machine, putting the filter
+// back into "always update" behavior. Idempotent. Keeps any current x
+// and P unchanged; only the mode-machinery is disabled.
+func (k *Filter) DisableStateMachine() {
+	k.stateMachineEnabled = false
+	k.mode = ModeCalibrating
+	k.consecutiveConverged = 0
+}
+
 // Mode returns the current state-machine phase. Always returns
 // ModeCalibrating if the state machine was not enabled.
 func (k *Filter) Mode() Mode {

@@ -59,9 +59,17 @@ type estimateCmd struct {
 
 // playbackCmd is the union of all scenario-playback control verbs.
 type playbackCmd struct {
-	Action string `json:"action"` // "play" | "pause" | "step" | "seek" | "reset" | "setRate"
+	Action string `json:"action"` // "play" | "pause" | "step" | "seek" | "reset" | "setRate" | "applyFilter"
 	Step   int    `json:"step"`   // target step for seek (0-based)
 	RateHz int    `json:"rateHz"` // ticks per second for play / setRate
+	// Fields used by "applyFilter": reconfigures the loaded scenario's
+	// filter mid-run. Convergence thresholds and state-machine settings.
+	MaxSigmaK      float64 `json:"maxSigmaK"`
+	MaxSigmaL      float64 `json:"maxSigmaL"`
+	StateMachineOn bool    `json:"stateMachineOn"`
+	LockHysteresis int     `json:"lockHysteresis"`
+	NISWindow      int     `json:"nisWindow"`
+	NISThreshold   float64 `json:"nisThreshold"`
 }
 
 type messageIn struct {

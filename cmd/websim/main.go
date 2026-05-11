@@ -327,6 +327,28 @@ func applyPlaybackCmd(c *connectionState, cmd playbackCmd, ticker *time.Ticker) 
 		c.params = c.pb.asParams()
 		pushParamsAndState(c)
 		pushPlaybackStatus(c)
+	case "applyFilter":
+		// Reconfigure the loaded scenario's filter mid-run. Lets the
+		// user toggle the state machine and tune thresholds from the
+		// UI without editing the YAML. Only affects pb.kf; the
+		// scenario script's stored config is untouched so Reset still
+		// uses the YAML values.
+		c.pb.kf.SetConvergenceThresholds(cmd.MaxSigmaK, cmd.MaxSigmaL)
+		if cmd.StateMachineOn && cmd.LockHysteresis > 0 && cmd.NISWindow > 0 && cmd.NISThreshold > 0 {
+			c.pb.kf.EnableStateMachine(cmd.LockHysteresis, cmd.NISWindow, cmd.NISThreshold)
+		} else {
+			c.pb.kf.DisableStateMachine()
+		}
+		// Reflect the new effective config back to the client so the
+		// scenario-info card stays accurate.
+		c.params.MaxSigmaK = cmd.MaxSigmaK
+		c.params.MaxSigmaL = cmd.MaxSigmaL
+		c.params.StateMachineOn = cmd.StateMachineOn
+		c.params.LockHysteresis = cmd.LockHysteresis
+		c.params.NISWindow = cmd.NISWindow
+		c.params.NISThreshold = cmd.NISThreshold
+		c.outCh <- messageOut{Params: &c.params}
+		pushPlaybackState(c, nil)
 	}
 	return ticker
 }

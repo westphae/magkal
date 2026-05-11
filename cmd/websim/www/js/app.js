@@ -97,6 +97,15 @@ vm = new Vue({
     methods: {
         refreshMaterialize: function () {
             this.$nextTick(() => {
+                // Destroy any prior FormSelect instances first. Re-init
+                // without destroy stacks event handlers and -- per a
+                // reported bug -- can cause the source dropdown change
+                // event to fail to propagate to Vue when transitioning
+                // out of Scenario mode.
+                document.querySelectorAll('select').forEach(function (el) {
+                    var inst = M.FormSelect.getInstance(el);
+                    if (inst) inst.destroy();
+                });
                 M.FormSelect.init(document.querySelectorAll('select'), {});
                 M.updateTextFields();
             });
@@ -206,6 +215,25 @@ vm = new Vue({
 
         forceLock:   function () { this.ws.send(JSON.stringify({"setMode": "LCK"})); },
         forceUnlock: function () { this.ws.send(JSON.stringify({"setMode": "CAL"})); },
+
+        // Fires when the user edits any convergence/state-machine field.
+        // In scenario mode we apply immediately to the loaded scenario's
+        // filter (the user can toggle SM mid-cruise). In other modes the
+        // values are picked up on the next Restart along with the rest of
+        // the params, so this is a no-op there.
+        onFilterCfgChange: function () {
+            if (parseInt(this.source) !== 4) return;
+            if (!this.playback.loaded) return;
+            this.ws.send(JSON.stringify({"playbackCmd": {
+                "action":         "applyFilter",
+                "maxSigmaK":      this.maxSigmaK || 0,
+                "maxSigmaL":      this.maxSigmaL || 0,
+                "stateMachineOn": !!this.smOn,
+                "lockHysteresis": this.lockHysteresis || 0,
+                "nisWindow":      this.nisWindow || 0,
+                "nisThreshold":   this.nisThreshold || 0
+            }}));
+        },
 
         // --- plot rebuild ---------------------------------------------
         // analysis.js plots are created against a specific n. We only need
