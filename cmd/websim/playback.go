@@ -49,6 +49,23 @@ func scenarioPicks() []string {
 // drained at a rate the client can actually consume.
 const displayCapHz = 10
 
+// checkpointEvery is the stride between cached filter snapshots saved
+// during normal play. On seek, we restore from the nearest cached
+// step ≤ target rather than rewinding to step 0. Cost: one Snapshot()
+// per checkpoint plus ~(matrix + nisBuf) bytes of memory each.
+const checkpointEvery = 1000
+
+// checkpoint captures everything needed to resume playback at a given
+// step: the filter's internal state, the truth.l value at that point
+// (perturbs mutate it), and enough rng information to reconstruct the
+// playbackRng. Since the playbackRng is fully determined by the seed
+// and the number of measurement steps consumed, the latter is enough.
+type checkpoint struct {
+	snap     kalman.Snapshot
+	truthL   []float64
+	measured int // number of measurement steps consumed in [0, step)
+}
+
 // playback owns a loaded scenario and its expanded direction stream, plus
 // the per-step iteration state. Methods are intended to run on the main
 // connection goroutine; an internal seekCtx cancels in-flight seeks when
@@ -78,6 +95,14 @@ type playback struct {
 	seekCancel context.CancelFunc
 
 	kf *kalman.Filter
+
+	// Checkpoints saved during normal play, keyed by step. checkpoint[0]
+	// is the initial state (saved at loadScenario). Subsequent entries
+	// at steps that are multiples of checkpointEvery.
+	checkpoints map[int]*checkpoint
+	// Running count of measurement steps consumed; needed for rng
+	// reconstruction in checkpoints.
+	measuredSoFar int
 }
 
 // recomputeSendEvery updates the send-every-Nth gate based on the
@@ -104,14 +129,21 @@ func loadScenario(name string) (*playback, error) {
 		return nil, err
 	}
 	pb := &playback{
-		script: s,
-		gens:   scenario.ExpandAll(s),
-		truth:  cloneTruth(s.Truth),
-		loaded: name,
-		rateHz: 10,
+		script:      s,
+		gens:        scenario.ExpandAll(s),
+		truth:       cloneTruth(s.Truth),
+		loaded:      name,
+		rateHz:      10,
+		checkpoints: map[int]*checkpoint{},
 	}
 	pb.recomputeSendEvery()
 	pb.rebuildFilter()
+	// Step-0 checkpoint: the fresh filter state plus initial truth.
+	pb.checkpoints[0] = &checkpoint{
+		snap:     pb.kf.Snapshot(),
+		truthL:   append([]float64(nil), pb.truth.L...),
+		measured: 0,
+	}
 	return pb, nil
 }
 
@@ -135,24 +167,60 @@ func (p *playback) rebuildFilter() {
 }
 
 // reset returns to step 0 with a fresh filter and truth from the script.
-// Cancels any running seek. Does not change playing state.
+// Cancels any running seek. Does not change playing state. Resets the
+// checkpoint cache to just the step-0 snapshot since subsequent seeks
+// will re-fill it.
 func (p *playback) reset() {
 	p.cancelSeek()
 	p.rebuildFilter()
 	p.truth = cloneTruth(p.script.Truth)
 	p.step = 0
+	p.measuredSoFar = 0
+	p.checkpoints = map[int]*checkpoint{
+		0: {
+			snap:     p.kf.Snapshot(),
+			truthL:   append([]float64(nil), p.truth.L...),
+			measured: 0,
+		},
+	}
+}
+
+// rngAt returns a freshly-seeded rng advanced to a state matching the
+// given measurement-step count. Equivalent to running playback from
+// step 0 to that point and consuming the noise rng exactly as
+// SynthMeasurement would, just without computing or applying the
+// measurements. Used during seek to reconstruct rng state.
+func (p *playback) rngAt(measured int) *rand.Rand {
+	r := rand.New(rand.NewSource(p.script.Seed))
+	// Each measurement step consumes truth.N NormFloat64 calls.
+	skip := measured * p.truth.N
+	for i := 0; i < skip; i++ {
+		r.NormFloat64()
+	}
+	return r
+}
+
+// CurrentRng returns a freshly-built rng matching playback's current
+// position. Called by main.go to resync c.playbackRng after a seek.
+func (p *playback) CurrentRng() *rand.Rand {
+	return p.rngAt(p.measuredSoFar)
 }
 
 // applyGen consumes one Generated entry: for perturb, mutates truth in
 // place; for measurement kinds, synthesizes a measurement using the given
 // rng and drives the filter. step is advanced. Returns the synthesized
 // measurement (nil for perturb steps) for downstream rendering.
+//
+// Also saves a checkpoint when the post-update step is a multiple of
+// checkpointEvery, so subsequent seeks can restore from the nearest
+// checkpoint ≤ target instead of replaying from step 0.
 func (p *playback) applyGen(g scenario.Generated, rng *rand.Rand) []float64 {
 	if g.Kind == scenario.KindPerturb {
 		for i := range p.truth.L {
 			p.truth.L[i] += g.DeltaL[i]
 		}
 		p.step++
+		p.maybeCheckpoint()
 		return nil
 	}
 	m := scenario.SynthMeasurement(
@@ -169,7 +237,37 @@ func (p *playback) applyGen(g scenario.Generated, rng *rand.Rand) []float64 {
 	p.kf.Z <- p.truth.N0 * p.truth.N0
 	<-p.kf.Done
 	p.step++
+	p.measuredSoFar++
+	p.maybeCheckpoint()
 	return m
+}
+
+func (p *playback) maybeCheckpoint() {
+	if p.step%checkpointEvery != 0 {
+		return
+	}
+	if _, exists := p.checkpoints[p.step]; exists {
+		return // already cached from a prior traversal
+	}
+	p.checkpoints[p.step] = &checkpoint{
+		snap:     p.kf.Snapshot(),
+		truthL:   append([]float64(nil), p.truth.L...),
+		measured: p.measuredSoFar,
+	}
+}
+
+// nearestCheckpoint returns the cached checkpoint at the highest step
+// ≤ target. Step 0 is always present, so this never returns nil.
+func (p *playback) nearestCheckpoint(target int) (atStep int, cp *checkpoint) {
+	atStep = 0
+	cp = p.checkpoints[0]
+	for k, v := range p.checkpoints {
+		if k <= target && k > atStep {
+			atStep = k
+			cp = v
+		}
+	}
+	return
 }
 
 // tickOne advances exactly one step from the current position. Returns
@@ -183,15 +281,11 @@ func (p *playback) tickOne(rng *rand.Rand) (g scenario.Generated, m []float64, o
 	return g, m, true
 }
 
-// seekTo cancels any prior seek, starts a new seek goroutine that
-// resets the playback to step 0 and advances to target. While the seek
-// is running, p.seeking is true. The provided onComplete is invoked
-// after the seek finishes (whether by completion or cancellation) so
-// the caller can push a state update. The bool argument is true for
-// successful completion, false if cancelled.
-//
-// rng is created fresh inside the goroutine so seeks are deterministic
-// w.r.t. the script.Seed.
+// seekTo cancels any prior seek and starts a new seek goroutine that
+// restores from the nearest cached checkpoint ≤ target and advances the
+// residual. While the seek is running, p.seeking is true. The provided
+// onComplete is invoked after the seek finishes (whether by completion
+// or cancellation) so the caller can push a state update.
 func (p *playback) seekTo(target int, onComplete func(success bool)) {
 	if target < 0 {
 		target = 0
@@ -208,24 +302,42 @@ func (p *playback) seekTo(target int, onComplete func(success bool)) {
 	p.mu.Unlock()
 
 	go func() {
+		// Clear seeking flag BEFORE invoking the callback so the
+		// status pushed inside it reports seeking=false. Use defer so
+		// this happens whether the seek completes or is cancelled.
+		success := false
 		defer func() {
 			p.mu.Lock()
 			p.seeking = false
 			p.seekCancel = nil
 			p.mu.Unlock()
+			onComplete(success)
 		}()
-		p.reset() // includes its own cancelSeek which is harmless now
-		rng := rand.New(rand.NewSource(p.script.Seed))
+
+		// Pick the nearest checkpoint ≤ target. If we're already past
+		// that checkpoint and ≤ target, advance forward from where we
+		// are; otherwise restore to the checkpoint and advance from
+		// there.
+		ckStep, cp := p.nearestCheckpoint(target)
+		if p.step >= ckStep && p.step <= target {
+			// Already in the right neighborhood; advance forward.
+		} else {
+			p.kf.Restore(cp.snap)
+			p.truth.L = append(p.truth.L[:0], cp.truthL...)
+			p.step = ckStep
+			p.measuredSoFar = cp.measured
+		}
+		rng := p.rngAt(p.measuredSoFar)
 		for p.step < target {
 			select {
 			case <-ctx.Done():
-				onComplete(false)
-				return
+				return // defer fires onComplete(false)
 			default:
 			}
 			_ = p.applyGen(p.gens[p.step], rng)
 		}
-		onComplete(true)
+		success = true
+		// defer fires onComplete(true)
 	}()
 }
 

@@ -306,24 +306,12 @@ func applyPlaybackCmd(c *connectionState, cmd playbackCmd, ticker *time.Ticker) 
 			ticker.Stop()
 		}
 		ticker = nil
-		// Seek runs in its own goroutine; on completion we resync the rng
-		// and push a state update via outCh (writer goroutine handles it).
+		// Seek runs in its own goroutine; on completion we resync the
+		// outer playbackRng so subsequent play ticks consume from where
+		// the seek left off. Push a state update via outCh.
 		target := cmd.Step
 		c.pb.seekTo(target, func(success bool) {
-			c.playbackRng = rand.New(rand.NewSource(c.pb.script.Seed))
-			// Advance rng to match the post-seek step count. The seek goroutine
-			// drives the filter with a fresh rng of its own; this just keeps
-			// our outer rng in sync for any follow-up play ticks.
-			for i := 0; i < c.pb.step; i++ {
-				if c.pb.gens[i].Kind == scenario.KindPerturb {
-					continue
-				}
-				// One call per measurement step matches SynthMeasurement's
-				// rng consumption (n NormFloat64 calls, but we don't care
-				// about exact byte parity here — we just need any deterministic
-				// state for follow-up play to be reproducible.).
-				_ = c.playbackRng.Float64()
-			}
+			c.playbackRng = c.pb.CurrentRng()
 			pushPlaybackState(c, nil)
 			pushPlaybackStatus(c)
 		})
