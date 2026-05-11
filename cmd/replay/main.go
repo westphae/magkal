@@ -59,6 +59,11 @@ func run(s *Script) error {
 		kf.SetConvergenceThresholds(s.Filter.MaxSigmaK, s.Filter.MaxSigmaL)
 	}
 	convergenceEnabled := s.Filter.MaxSigmaK > 0 && s.Filter.MaxSigmaL > 0
+	stateMachineEnabled := s.Filter.StateMachine != nil
+	if stateMachineEnabled {
+		sm := s.Filter.StateMachine
+		kf.EnableStateMachine(sm.LockHysteresis, sm.NISWindow, sm.NISThreshold)
+	}
 
 	var w Writer
 	switch {
@@ -67,6 +72,7 @@ func run(s *Script) error {
 	case *flagCSV:
 		cw := newCSVWriter(os.Stdout, n)
 		cw.convergenceEnabled = convergenceEnabled
+		cw.stateMachineEnabled = stateMachineEnabled
 		if err := cw.WriteHeader(n, ""); err != nil {
 			return err
 		}
@@ -74,6 +80,7 @@ func run(s *Script) error {
 	default:
 		tw := newTableWriter(os.Stdout, n)
 		tw.convergenceEnabled = convergenceEnabled
+		tw.stateMachineEnabled = stateMachineEnabled
 		// No initial header; the first record's segment-change branch prints one.
 		w = tw
 	}
@@ -101,6 +108,16 @@ func run(s *Script) error {
 	}
 
 	for _, st := range s.Steps {
+		if st.Perturb != nil {
+			// Mutate truth in place; no measurements produced. Log to stderr so
+			// the user can correlate the event with subsequent record rows.
+			for i := range s.Truth.L {
+				s.Truth.L[i] += st.Perturb.DeltaL[i]
+			}
+			fmt.Fprintf(os.Stderr, "[%s] perturb: delta_l=%v -> new truth.l=%v\n",
+				st.Perturb.Label, st.Perturb.DeltaL, s.Truth.L)
+			continue
+		}
 		gens := expand(st, s.Truth, rng)
 		for _, g := range gens {
 			if g.Label != segLabel {
@@ -187,6 +204,8 @@ func buildRecord(step int, g Generated, m []float64, z float64, kf *kalman.Filte
 		LErr:      lErr,
 		TrP:       trP,
 		Converged: kf.Converged(),
+		Mode:      kf.Mode().String(),
+		NIS:       kf.NIS(),
 	}
 }
 

@@ -1,0 +1,64 @@
+# Exercise the LCK → CAL unlock path. Home-init → cruise (locks) →
+# perturb adds 2000 nT of hard-iron bias to the y-axis (simulating an
+# iPad enclosure dropped in the cabin) → cruise again (should unlock,
+# recalibrate to the new l_1, then re-lock).
+truth:
+  n: 3
+  n0: 50000.0
+  k: [0.95, 0.92, 1.03]
+  l: [120.0, -85.0, 240.0]
+  noise: 50.0
+  inclination_deg: 65.0
+
+filter:
+  sigmaK0:   0.25
+  sigmaK:    1.0e-8
+  sigmaM:    1.0e-3
+  maxSigmaK: 1.0e-2
+  maxSigmaL: 50.0
+  stateMachine:
+    lockHysteresis: 10
+    nisWindow:      100
+    nisThreshold:   4.0
+
+seed: 42
+
+steps:
+  - random:
+      count: 200
+      label: "home_init"
+
+  - body_frame:
+      heading_deg: 0
+      pitch_deg: 0
+      roll_deg: 0
+      jitter_heading_deg: 0.5
+      jitter_pitch_deg: 1.0
+      jitter_roll_deg: 1.0
+      count: 20000
+      label: "cruise_pre_ipad"
+
+  - perturb:
+      # Add 5000 nT to y-axis hard-iron bias (about the scale of a phone
+      # with a magnetic case placed near the unit). Smaller perturbations
+      # don't move NIS far enough above the χ²(1) baseline to trip the
+      # threshold — they'd be absorbed as ambient noise instead.
+      delta_l: [0.0, 5000.0, 0.0]
+      label: "ipad_arrives"
+
+  - body_frame:
+      heading_deg: 0
+      pitch_deg: 0
+      roll_deg: 0
+      jitter_heading_deg: 0.5
+      jitter_pitch_deg: 1.0
+      jitter_roll_deg: 1.0
+      count: 20000
+      label: "cruise_post_ipad"
+
+  # Pilot lands, re-runs the home calibration (or in flight, performs
+  # turns and attitude changes that provide orthogonal observations).
+  # Demonstrates full recovery and re-lock.
+  - random:
+      count: 200
+      label: "recal"

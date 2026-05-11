@@ -74,6 +74,19 @@ present, and is what the lock/unlock architecture is meant to neutralize.
 - No damping factor on the Kalman gain — the standard EKF gain (`1/s`)
   works once `r` is right. Earlier versions had `EPS = 0.1` to compensate
   for the oversized gain caused by undersized `r`; that's been removed.
+- **Calibrate-then-lock state machine** (opt-in via `EnableStateMachine`):
+  `Mode()` reports `ModeCalibrating` (default — every `Z` applies a full
+  EKF update) or `ModeLocked` (Z is observed for NIS monitoring but
+  state and P are NOT updated). Transitions:
+    - CAL→LCK after `lockHysteresis` consecutive `Converged()=true`
+      samples;
+    - LCK→CAL when the rolling mean of `y²/s` over `nisWindow` LOCKED
+      samples exceeds `nisThreshold`. On unlock the state `x` is
+      preserved but `P` is re-inflated to its initial diagonal values
+      (using `n0`, `sigmaK0` saved at construction) so the filter can
+      relearn quickly.
+  Consumers that don't call `EnableStateMachine` see no behavior change
+  (cmd/websim, cmd/sim).
 - `matrices.go` defines `type Matrix [][]float64` and the basic linalg
   helpers. The repo deliberately uses plain slices instead of `gonum`.
 - The package doc comment ("aggregates measurements") is stale — the
@@ -94,18 +107,26 @@ Step kinds: `sweep` (walk angles), `hold` (cluster around one (theta,phi)
 in measurer convention with Gaussian jitter), `random` (uniform on
 circle/sphere), `body_frame` (aircraft holding a nominal (heading, pitch,
 roll) with jitter on each, with the Earth field rotated into body frame
-using `truth.inclination_deg`). Each step has a `label` that flows into
-output so segments can be sliced.
+using `truth.inclination_deg`), `perturb` (additive shift to `truth.l`
+with no measurements; used to simulate an external magnetic disturbance
+mid-script). Each step has a `label` that flows into output so segments
+can be sliced.
 
 Canonical scenarios in `cmd/replay/scripts/`:
 - `box.yaml` — well-conditioned 2D baseline.
 - `cruise_long_hold.yaml`, `cruise_with_turns.yaml` — older 2D-style
   scenarios using `phi=0` (no z-component); now mainly useful as
   regression tests against the historical EKF blow-up.
-- `cruise_realistic.yaml` — the intended workflow: hand-rotate at
-  home, then long cruise hold with realistic geomagnetic inclination
-  and small attitude jitter. The current open problem (long-hold drift
-  along the unobservable l-axis) is most visible here.
+- `cruise_realistic.yaml` — hand-rotate at home then long cruise hold
+  with realistic geomagnetic inclination, *without* the state machine
+  enabled. Demonstrates the unobservable-ridge drift on cruise.
+- `cruise_locked.yaml` — same flow but with the state machine enabled.
+  After home_init the filter locks and stays locked through 1M cruise
+  samples with zero drift.
+- `cruise_ipad.yaml` — full lock/unlock/relock cycle: home_init →
+  cruise (locks) → `perturb` adds 5000 nT to the y-axis hard iron →
+  cruise (NIS spike unlocks the filter; y-axis quickly relearned) →
+  `random` recal (full recovery to within ~20 nT of new truth).
 
 Useful flags: `--every N` to downsample long runs, `--csv` for
 spreadsheet/plot input, `--summary` for a one-line per-segment digest to
@@ -168,14 +189,17 @@ follow-up design work; Claude should not try to resolve them autonomously.
   should decide the latter and verify the former. If the diagonal
   criterion turns out to lie about convergence under degenerate
   observation, the follow-up is max-eigenvalue(P) instead.
-- **Add a lock/unlock state machine to handle the in-flight magnetic
-  environment.** When `Converged()`, freeze `(k, l)` and stop updating.
-  On each subsequent measurement, compute the would-be innovation
-  `y = n0² − Σ(k(m−l))²` and `s = R + HPH'` (without applying the
-  update); track windowed NIS `y²/s`. When NIS sustainedly exceeds a
-  chi-squared threshold, an iPad or avionics change has perturbed the
-  field — unlock and re-enter CALIBRATING mode with `P` re-inflated.
-  This is the right place to put the user's "sphericity / don't
+- **Tune state-machine thresholds against real-hardware NIS
+  distributions.** `EnableStateMachine(lockHysteresis, nisWindow,
+  nisThreshold)` is implemented; the `(10, 100, 4.0)` triple in
+  `cruise_locked.yaml`/`cruise_ipad.yaml` is a sim-tuned starting
+  point. χ²(1) baseline says expected per-sample NIS is 1.0; in sim
+  with the corrected `r`, the rolling mean sits around 0.7–1.2 during
+  LCK, so a threshold around 2–4 is sensible. Real-hardware noise
+  distributions may not be exactly Gaussian — verify the LCK-mode NIS
+  histogram against χ²(1) and re-tune. Bigger iPads (≥5000 nT) cleanly
+  trigger the unlock; smaller disturbances get absorbed as noise. This
+  is the right place to put the original "sphericity / don't
   over-favor one direction" intuition, but applied at the regime-
   selection layer rather than as an EKF regularizer.
 

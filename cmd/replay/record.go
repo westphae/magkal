@@ -26,7 +26,9 @@ type Record struct {
 	KErr      []float64
 	LErr      []float64
 	TrP       float64
-	Converged bool // result of (*Filter).Converged() at this step; meaningless if thresholds unset
+	Converged bool    // result of (*Filter).Converged() at this step; meaningless if thresholds unset
+	Mode      string  // (*Filter).Mode().String(); always "CAL" if state machine off
+	NIS       float64 // (*Filter).NIS(); 0 if state machine off
 }
 
 // Writer abstracts emitting a stream of Records. Both implementations are
@@ -41,12 +43,13 @@ type Writer interface {
 // --- Aligned text-table writer ----------------------------------------------
 
 type tableWriter struct {
-	w                  io.Writer
-	n                  int
-	lastLabel          string
-	headerEvery        int // re-print header every N rows; 0 disables
-	rowsSince          int
-	convergenceEnabled bool // if true, include a "conv" column
+	w                   io.Writer
+	n                   int
+	lastLabel           string
+	headerEvery         int // re-print header every N rows; 0 disables
+	rowsSince           int
+	convergenceEnabled  bool // if true and !stateMachineEnabled, include a "conv" column
+	stateMachineEnabled bool // if true, include "mode" and "nis" columns (supersedes conv)
 }
 
 func newTableWriter(w io.Writer, n int) *tableWriter {
@@ -62,11 +65,14 @@ func (t *tableWriter) WriteHeader(n int, label string) error {
 		cols = append(cols, fmt.Sprintf("l%d", i))
 	}
 	cols = append(cols, "y", "tr(P)")
-	if t.convergenceEnabled {
+	switch {
+	case t.stateMachineEnabled:
+		cols = append(cols, "mode", "nis")
+	case t.convergenceEnabled:
 		cols = append(cols, "conv")
 	}
 	// Widths: tuned to keep numerical columns readable for n=3.
-	widths := tableWidths(n, t.convergenceEnabled)
+	widths := tableWidths(n, t.convergenceEnabled, t.stateMachineEnabled)
 	var b strings.Builder
 	for i, c := range cols {
 		fmt.Fprintf(&b, "%*s", widths[i], c)
@@ -95,7 +101,7 @@ func (t *tableWriter) WriteRecord(r *Record) error {
 	}
 	t.rowsSince++
 
-	widths := tableWidths(t.n, t.convergenceEnabled)
+	widths := tableWidths(t.n, t.convergenceEnabled, t.stateMachineEnabled)
 	cells := []string{
 		strconv.Itoa(r.Step),
 		r.Label,
@@ -109,7 +115,10 @@ func (t *tableWriter) WriteRecord(r *Record) error {
 		cells = append(cells, fmtF(r.L[i], 2))
 	}
 	cells = append(cells, fmtE(r.Y), fmtE(r.TrP))
-	if t.convergenceEnabled {
+	switch {
+	case t.stateMachineEnabled:
+		cells = append(cells, r.Mode, fmtE(r.NIS))
+	case t.convergenceEnabled:
 		if r.Converged {
 			cells = append(cells, "yes")
 		} else {
@@ -132,8 +141,8 @@ func (t *tableWriter) WriteRecord(r *Record) error {
 func (t *tableWriter) Close() error { return nil }
 
 // tableWidths returns the column widths for a table with n axes.
-// 4 fixed + n k-cols + n l-cols + 2 trailing (+ 1 conv if enabled).
-func tableWidths(n int, conv bool) []int {
+// 4 fixed + n k-cols + n l-cols + 2 trailing (+ mode/nis or conv).
+func tableWidths(n int, conv, sm bool) []int {
 	widths := []int{6, 14, 7, 7}
 	for i := 0; i < n; i++ {
 		widths = append(widths, 8)
@@ -142,7 +151,10 @@ func tableWidths(n int, conv bool) []int {
 		widths = append(widths, 9)
 	}
 	widths = append(widths, 11, 11)
-	if conv {
+	switch {
+	case sm:
+		widths = append(widths, 5, 10)
+	case conv:
 		widths = append(widths, 5)
 	}
 	return widths
@@ -162,10 +174,11 @@ func fmtE(v float64) string {
 // --- CSV writer -------------------------------------------------------------
 
 type csvWriter struct {
-	w                  *csv.Writer
-	n                  int
-	wroteHdr           bool
-	convergenceEnabled bool
+	w                   *csv.Writer
+	n                   int
+	wroteHdr            bool
+	convergenceEnabled  bool
+	stateMachineEnabled bool
 }
 
 func newCSVWriter(w io.Writer, n int) *csvWriter {
@@ -201,7 +214,10 @@ func (c *csvWriter) WriteHeader(n int, label string) error {
 		cols = append(cols, fmt.Sprintf("lerr%d", i))
 	}
 	cols = append(cols, "trP")
-	if c.convergenceEnabled {
+	switch {
+	case c.stateMachineEnabled:
+		cols = append(cols, "mode", "nis")
+	case c.convergenceEnabled:
 		cols = append(cols, "converged")
 	}
 	return c.w.Write(cols)
@@ -238,7 +254,10 @@ func (c *csvWriter) WriteRecord(r *Record) error {
 		row = append(row, csvF(v))
 	}
 	row = append(row, csvF(r.TrP))
-	if c.convergenceEnabled {
+	switch {
+	case c.stateMachineEnabled:
+		row = append(row, r.Mode, csvF(r.NIS))
+	case c.convergenceEnabled:
 		if r.Converged {
 			row = append(row, "1")
 		} else {

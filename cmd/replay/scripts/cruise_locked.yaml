@@ -1,0 +1,40 @@
+# Same flow as cruise_realistic.yaml but with the lock/unlock state machine
+# enabled. After home_init the filter should converge and transition to LCK,
+# then stay LCK throughout the cruise. Final state should match wherever it
+# locked, not the ridge-walked values cruise_realistic produces.
+truth:
+  n: 3
+  n0: 50000.0
+  k: [0.95, 0.92, 1.03]
+  l: [120.0, -85.0, 240.0]
+  noise: 50.0
+  inclination_deg: 65.0
+
+filter:
+  sigmaK0:   0.25
+  sigmaK:    1.0e-8
+  sigmaM:    1.0e-3
+  # Loose enough that 200 home_init samples can cross the threshold;
+  # tighten when grounding against real hardware.
+  maxSigmaK: 1.0e-2
+  maxSigmaL: 50.0
+  stateMachine:
+    lockHysteresis: 10    # 10 consecutive Converged()=true to lock
+    nisWindow:      100   # rolling NIS mean over last 100 LCK samples
+    nisThreshold:   4.0   # χ²(1) 95th percentile is ~3.84
+
+seed: 42
+
+steps:
+  - random:
+      count: 200
+      label: "home_init"
+  - body_frame:
+      heading_deg: 0
+      pitch_deg: 0
+      roll_deg: 0
+      jitter_heading_deg: 0.5
+      jitter_pitch_deg: 1.0
+      jitter_roll_deg: 1.0
+      count: 1000000
+      label: "cruise_locked"
