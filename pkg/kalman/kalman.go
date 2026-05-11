@@ -32,6 +32,16 @@ func (m Mode) String() string {
 	return "?"
 }
 
+// forceCmd is the internal command type for ForceLock / ForceUnlock,
+// dispatched through the runFilter goroutine to avoid racing with state
+// reads/writes that happen there.
+type forceCmd int
+
+const (
+	forceCmdLock forceCmd = iota + 1
+	forceCmdUnlock
+)
+
 type Filter struct {
 	n int               // Number of dimensions
 	x Matrix            // Kalman Filter hidden state
@@ -42,7 +52,8 @@ type Filter struct {
 	z float64           // Measurement, earth's mag field strength **2
 	U chan Matrix       // Channel for sending new control values to Kalman Filter
 	Z chan float64      // Channel for sending new measurements to Kalman Filter
-	Done chan struct{}  // Signalled (non-blocking) after each Z update completes; size-1 buffer
+	Done chan struct{}  // Signalled (non-blocking) after each Z update or Force* completes; size-1 buffer
+	force chan forceCmd // Internal channel for ForceLock/ForceUnlock; unbuffered
 
 	// Saved init params so unlockAndInflate can rebuild P's initial diagonals.
 	n0      float64
@@ -108,6 +119,7 @@ func NewKalmanFilter(n int, n0, sigmaK0, sigmaK, sigmaM float64) (k *Filter) {
 	k.U = make(chan Matrix)
 	k.Z = make(chan float64)
 	k.Done = make(chan struct{}, 1)
+	k.force = make(chan forceCmd)
 
 	go k.runFilter()
 
@@ -193,6 +205,24 @@ func (k *Filter) runFilter() {
 			// Non-blocking signal that the update is complete; observers
 			// who care about post-update state read from Done after sending
 			// to Z. Drain Done before sending Z to avoid stale signals.
+			select {
+			case k.Done <- struct{}{}:
+			default:
+			}
+		case cmd := <-k.force:
+			// External force-lock / force-unlock dispatched here so it
+			// doesn't race with U/Z processing or with state reads.
+			switch cmd {
+			case forceCmdLock:
+				if k.stateMachineEnabled {
+					k.mode = ModeLocked
+					k.consecutiveConverged = 0
+				}
+			case forceCmdUnlock:
+				if k.stateMachineEnabled {
+					k.unlockAndInflate()
+				}
+			}
 			select {
 			case k.Done <- struct{}{}:
 			default:
@@ -355,6 +385,40 @@ func (k *Filter) nisPush(nis float64) {
 	k.nisBuf[k.nisIdx] = nis
 	k.nisSum += nis
 	k.nisIdx = (k.nisIdx + 1) % len(k.nisBuf)
+}
+
+// ForceUnlock transitions to ModeCalibrating and re-inflates P,
+// equivalent to the NIS-triggered automatic unlock. State x is
+// preserved. Useful for UI "force recalibration" and for tests. No-op
+// if EnableStateMachine has not been called. Synchronous: returns only
+// after the goroutine has applied the change.
+func (k *Filter) ForceUnlock() {
+	if !k.stateMachineEnabled {
+		return
+	}
+	select {
+	case <-k.Done:
+	default:
+	}
+	k.force <- forceCmdUnlock
+	<-k.Done
+}
+
+// ForceLock transitions to ModeLocked immediately, bypassing the
+// Converged()/lockHysteresis check. Use cautiously — locking before
+// the calibration is actually good will freeze it at a bad value. P
+// is left as-is (unlike unlock, which re-inflates). No-op if
+// EnableStateMachine has not been called. Synchronous.
+func (k *Filter) ForceLock() {
+	if !k.stateMachineEnabled {
+		return
+	}
+	select {
+	case <-k.Done:
+	default:
+	}
+	k.force <- forceCmdLock
+	<-k.Done
 }
 
 // unlockAndInflate transitions LCK→CAL: resets the NIS window, resets
