@@ -765,12 +765,15 @@ function MagInputArea(el, n, callback) {
         }, {"passive": false, "capture": true});
 
     this.update_measurement = function(datum) {
-        let n1 = datum['KAct1']*datum['M1']+datum['LAct1'],
-            n2 = datum['KAct2']*datum['M2']+datum['LAct2'],
-            n3 = datum['KAct3']*datum['M3']+datum['LAct3'];
+        // Recover the true field components from the raw magnetometer
+        // reading. Forward model (cmd/websim/measurer.go): m = n/k + l,
+        // so n = k*(m - l). The earlier KAct*M + LAct form had a sign
+        // error that offset the marker dot by an l-dependent amount.
+        let n1 = datum['KAct1']*(datum['M1']-datum['LAct1']),
+            n2 = datum['KAct2']*(datum['M2']-datum['LAct2']),
+            n3 = datum['KAct3']*(datum['M3']-datum['LAct3']);
         let nn = Math.sqrt(n1*n1+n2*n2+n3*n3);
         let phi = this.n===3 ? Math.asin(n3/nn) : 0;
-        console.log(this.n, phi);
         let theta = Math.atan2(n2/(nn*Math.cos(phi)), n1/(nn*Math.cos(phi)));
         let d = {
             'theta': (theta<0 ? theta+2*Math.PI : theta)*180/Math.PI,
