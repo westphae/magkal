@@ -65,7 +65,22 @@ vm = new Vue({
         });
     },
 
+    watch: {
+        // Materialize wraps <select> elements with a styled overlay that's
+        // built at init time; when v-if reveals a new <select> or the
+        // <option> list changes, we need to reinitialize so the visible
+        // dropdown matches the underlying element.
+        source: function () { this.reinitSelects(); },
+        scenarios: function () { this.reinitSelects(); }
+    },
+
     methods: {
+        reinitSelects: function () {
+            this.$nextTick(function () {
+                var elems = document.querySelectorAll('select');
+                M.FormSelect.init(elems, {});
+            });
+        },
         check_n: function() {
             if (this.n !== Math.floor(this.n) || this.n < 1 || this.n > 3) { this.n = params.n; }
         },
@@ -253,10 +268,7 @@ vm = new Vue({
                 }
 
                 // Re-init Materialize selects since options changed.
-                this.$nextTick(function () {
-                    var elems = document.querySelectorAll('select');
-                    M.FormSelect.init(elems, {});
-                });
+                this.reinitSelects();
             }
 
             if (msg.measurement) {
