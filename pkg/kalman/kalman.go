@@ -8,6 +8,30 @@ import (
 	"math"
 )
 
+// Mode is the state-machine phase of the filter.
+type Mode int
+
+const (
+	// ModeCalibrating: every Z applies a full EKF update. Default after
+	// NewKalmanFilter.
+	ModeCalibrating Mode = iota
+	// ModeLocked: Z is observed (innovation and S still computed for NIS
+	// monitoring) but the state x and covariance P are NOT updated.
+	// Reached only if the state machine has been enabled via
+	// EnableStateMachine.
+	ModeLocked
+)
+
+func (m Mode) String() string {
+	switch m {
+	case ModeCalibrating:
+		return "CAL"
+	case ModeLocked:
+		return "LCK"
+	}
+	return "?"
+}
+
 type Filter struct {
 	n int               // Number of dimensions
 	x Matrix            // Kalman Filter hidden state
@@ -20,10 +44,26 @@ type Filter struct {
 	Z chan float64      // Channel for sending new measurements to Kalman Filter
 	Done chan struct{}  // Signalled (non-blocking) after each Z update completes; size-1 buffer
 
+	// Saved init params so unlockAndInflate can rebuild P's initial diagonals.
+	n0      float64
+	sigmaK0 float64
+
 	// Convergence thresholds; zero means "not configured, Converged() returns
 	// false". See SetConvergenceThresholds and Converged.
 	maxSigmaK float64
 	maxSigmaL float64
+
+	// State machine; activated by EnableStateMachine. While disabled, the
+	// filter always updates and Mode() always returns ModeCalibrating.
+	stateMachineEnabled  bool
+	mode                 Mode
+	lockHysteresis       int     // consecutive Converged()=true samples needed to lock
+	consecutiveConverged int     // counter against lockHysteresis
+	nisBuf               []float64
+	nisIdx               int     // next write position in circular buffer
+	nisCount             int     // values currently in buffer (<= len(nisBuf))
+	nisSum               float64 // sum of values in buffer (for O(1) mean)
+	nisThreshold         float64 // rolling mean above this triggers unlock
 }
 
 // NewKalmanFilter returns a Filter struct with Kalman Filter methods for calibrating a magnetometer.
@@ -35,6 +75,8 @@ type Filter struct {
 func NewKalmanFilter(n int, n0, sigmaK0, sigmaK, sigmaM float64) (k *Filter) {
 	k = new(Filter)
 	k.n = n
+	k.n0 = n0
+	k.sigmaK0 = sigmaK0
 
 	k.x = make(Matrix, 2*n)
 	k.p = make(Matrix, 2*n)
@@ -101,35 +143,52 @@ func (k *Filter) runFilter() {
 				}
 			}
 		case k.z = <-k.Z:
-			// Calculate measurement residual
+			// Calculate measurement residual (always — needed for both modes)
 			y = k.z
 			for i := 0; i < k.n; i++ {
 				y -= nHat[i][0] * nHat[i][0]
 			}
 			log.Printf("Innovation y = %f\n", y)
 
-			// Calculate Jacobian
+			// Calculate Jacobian (always — needed for S in both modes)
 			for i := 0; i < k.n; i++ {
 				h[0][2*i] = 2 * nHat[i][0] * nHat[i][0] / k.x[2*i][0]
 				h[0][2*i+1] = -2 * nHat[i][0] * k.x[2*i][0]
 			}
 			log.Printf("Jacobian H = %v\n", h)
 
-			// Calculate S
+			// Calculate S (always — used for gain in CAL, for NIS in LCK)
 			s = matAdd(k.r, matMul(h, matMul(k.p, matTranspose(h))))
 			log.Printf("Inn Cov s = %v\n", s)
 
-			// Kalman Gain
-			kk = matSMul(1/s[0][0], matMul(k.p, matTranspose(h)))
-			log.Printf("Gain kk = %v\n", kk)
+			if k.stateMachineEnabled && k.mode == ModeLocked {
+				// LOCKED: monitor NIS, don't update state or P.
+				nis := y * y / s[0][0]
+				k.nisPush(nis)
+				if k.nisCount >= len(k.nisBuf) && k.nisSum/float64(k.nisCount) > k.nisThreshold {
+					k.unlockAndInflate()
+				}
+			} else {
+				// CALIBRATING (or state machine disabled): normal EKF update.
+				kk = matSMul(1/s[0][0], matMul(k.p, matTranspose(h)))
+				log.Printf("Gain kk = %v\n", kk)
+				k.x = matAdd(k.x, matSMul(y, kk))
+				log.Printf("State Update y*kk = %v\n", matSMul(y, kk))
+				k.p = matMul(matAdd(id, matSMul(-1, matMul(kk, h))), k.p)
+				log.Printf("Cov Update kk*h = %v\n\n", matMul(matSMul(-1, matMul(kk, h)), k.p))
 
-			// State correction
-			k.x = matAdd(k.x, matSMul(y, kk))
-			log.Printf("State Update y*kk = %v\n", matSMul(y, kk))
-
-			// State covariance correction
-			k.p = matMul(matAdd(id, matSMul(-1, matMul(kk, h))), k.p)
-			log.Printf("Cov Update kk*h = %v\n\n", matMul(matSMul(-1, matMul(kk, h)), k.p))
+				// Check for CAL → LCK transition.
+				if k.stateMachineEnabled {
+					if k.Converged() {
+						k.consecutiveConverged++
+						if k.consecutiveConverged >= k.lockHysteresis {
+							k.mode = ModeLocked
+						}
+					} else {
+						k.consecutiveConverged = 0
+					}
+				}
+			}
 
 			// Non-blocking signal that the update is complete; observers
 			// who care about post-update state read from Done after sending
@@ -233,4 +292,90 @@ func (k *Filter) Converged() bool {
 		}
 	}
 	return true
+}
+
+// EnableStateMachine activates the calibrate-then-lock state machine.
+// SetConvergenceThresholds must also be called (and with non-zero
+// values) for the CAL→LCK transition to ever fire — without it,
+// Converged() always returns false.
+//
+//   lockHysteresis: consecutive Converged()=true samples required before
+//                   transitioning CAL→LCK. 1 locks on first convergence;
+//                   higher values reduce flicker. Reasonable default: 10.
+//   nisWindow:      rolling-window length for the LCK→CAL trigger's NIS
+//                   mean. 100 is a reasonable starting point.
+//   nisThreshold:   rolling NIS mean above this unlocks. Under the
+//                   filter's Gaussian assumption innovation²/S follows
+//                   χ²(1) with expected mean 1; thresholds of 3–6 are
+//                   typical. Tune against real-hardware noise.
+//
+// Invalid arguments (any <= 0) are silently rejected — the filter stays
+// in its previous (typically not-enabled) mode. Replay-level validation
+// catches and reports these to the user.
+func (k *Filter) EnableStateMachine(lockHysteresis, nisWindow int, nisThreshold float64) {
+	if lockHysteresis < 1 || nisWindow < 1 || nisThreshold <= 0 {
+		return
+	}
+	k.stateMachineEnabled = true
+	k.mode = ModeCalibrating
+	k.lockHysteresis = lockHysteresis
+	k.consecutiveConverged = 0
+	k.nisBuf = make([]float64, nisWindow)
+	k.nisIdx = 0
+	k.nisCount = 0
+	k.nisSum = 0
+	k.nisThreshold = nisThreshold
+}
+
+// Mode returns the current state-machine phase. Always returns
+// ModeCalibrating if the state machine was not enabled.
+func (k *Filter) Mode() Mode {
+	return k.mode
+}
+
+// NIS returns the most recent rolling-window mean of the normalized
+// innovation squared (y²/S). Useful for instrumentation. Returns 0 if
+// no NIS samples have been recorded yet (i.e. before the first LOCKED
+// sample) or if the state machine isn't enabled.
+func (k *Filter) NIS() float64 {
+	if k.nisCount == 0 {
+		return 0
+	}
+	return k.nisSum / float64(k.nisCount)
+}
+
+// nisPush adds a new NIS sample to the circular buffer, maintaining the
+// running sum for O(1) mean computation.
+func (k *Filter) nisPush(nis float64) {
+	if k.nisCount == len(k.nisBuf) {
+		k.nisSum -= k.nisBuf[k.nisIdx]
+	} else {
+		k.nisCount++
+	}
+	k.nisBuf[k.nisIdx] = nis
+	k.nisSum += nis
+	k.nisIdx = (k.nisIdx + 1) % len(k.nisBuf)
+}
+
+// unlockAndInflate transitions LCK→CAL: resets the NIS window, resets
+// the consecutive-converged counter, and re-inflates P to its initial
+// diagonal values. State x is preserved (the prior calibration remains
+// our best guess; we just acknowledge we're now uncertain about it).
+func (k *Filter) unlockAndInflate() {
+	k.mode = ModeCalibrating
+	k.consecutiveConverged = 0
+	for i := range k.nisBuf {
+		k.nisBuf[i] = 0
+	}
+	k.nisIdx = 0
+	k.nisCount = 0
+	k.nisSum = 0
+	for i := 0; i < k.n; i++ {
+		for j := 0; j < 2*k.n; j++ {
+			k.p[2*i][j] = 0
+			k.p[2*i+1][j] = 0
+		}
+		k.p[2*i][2*i] = k.sigmaK0 * k.sigmaK0
+		k.p[2*i+1][2*i+1] = (k.n0 * k.sigmaK0) * (k.n0 * k.sigmaK0)
+	}
 }
