@@ -42,6 +42,23 @@ const (
 	forceCmdUnlock
 )
 
+// Snapshot is a serializable copy of the filter's full internal state.
+// Use Snapshot() to capture and Restore() to reapply (e.g., for
+// scenario-replay checkpoints in cmd/websim).
+//
+// All slices/matrices in a Snapshot are independent copies — modifying
+// them does not affect the live filter.
+type Snapshot struct {
+	X                    Matrix
+	P                    Matrix
+	Mode                 Mode
+	ConsecutiveConverged int
+	NISBuf               []float64
+	NISIdx               int
+	NISCount             int
+	NISSum               float64
+}
+
 type Filter struct {
 	n int               // Number of dimensions
 	x Matrix            // Kalman Filter hidden state
@@ -50,10 +67,11 @@ type Filter struct {
 	r Matrix            // Measurement noise
 	u Matrix            // Control vector, measured mag vector in this case
 	z float64           // Measurement, earth's mag field strength **2
-	U chan Matrix       // Channel for sending new control values to Kalman Filter
-	Z chan float64      // Channel for sending new measurements to Kalman Filter
-	Done chan struct{}  // Signalled (non-blocking) after each Z update or Force* completes; size-1 buffer
-	force chan forceCmd // Internal channel for ForceLock/ForceUnlock; unbuffered
+	U chan Matrix        // Channel for sending new control values to Kalman Filter
+	Z chan float64       // Channel for sending new measurements to Kalman Filter
+	Done chan struct{}   // Signalled (non-blocking) after each Z update or Force*/Restore completes; size-1 buffer
+	force chan forceCmd  // Internal channel for ForceLock/ForceUnlock; unbuffered
+	restore chan Snapshot // Internal channel for Restore; unbuffered
 
 	// Saved init params so unlockAndInflate can rebuild P's initial diagonals.
 	n0      float64
@@ -120,6 +138,7 @@ func NewKalmanFilter(n int, n0, sigmaK0, sigmaK, sigmaM float64) (k *Filter) {
 	k.Z = make(chan float64)
 	k.Done = make(chan struct{}, 1)
 	k.force = make(chan forceCmd)
+	k.restore = make(chan Snapshot)
 
 	go k.runFilter()
 
@@ -223,6 +242,14 @@ func (k *Filter) runFilter() {
 					k.unlockAndInflate()
 				}
 			}
+			select {
+			case k.Done <- struct{}{}:
+			default:
+			}
+		case s := <-k.restore:
+			// External Restore dispatched here so we overwrite x, p, and
+			// state-machine fields without racing with anything else.
+			k.applyRestoreLocked(s)
 			select {
 			case k.Done <- struct{}{}:
 			default:
@@ -419,6 +446,68 @@ func (k *Filter) ForceLock() {
 	}
 	k.force <- forceCmdLock
 	<-k.Done
+}
+
+// Snapshot returns an independent deep copy of the filter's full
+// internal state, suitable for stashing as a checkpoint and reapplying
+// later with Restore. Safe to call between filter operations (the
+// caller should ensure no concurrent send to U/Z/force/restore is in
+// flight; the cmd/websim playback main loop reads Snapshot only after
+// receiving Done from the previous Z, which is sufficient).
+func (k *Filter) Snapshot() Snapshot {
+	return Snapshot{
+		X:                    copyMatrix(k.x),
+		P:                    copyMatrix(k.p),
+		Mode:                 k.mode,
+		ConsecutiveConverged: k.consecutiveConverged,
+		NISBuf:               append([]float64(nil), k.nisBuf...),
+		NISIdx:               k.nisIdx,
+		NISCount:             k.nisCount,
+		NISSum:               k.nisSum,
+	}
+}
+
+// Restore overwrites the filter's internal state with s. Synchronous:
+// blocks until the goroutine has applied the change. The Snapshot's
+// dimensions must match the filter (panic otherwise to surface bugs
+// quickly rather than silently corrupting state).
+func (k *Filter) Restore(s Snapshot) {
+	if len(s.X) != 2*k.n {
+		panic("kalman.Restore: snapshot dimension mismatch")
+	}
+	select {
+	case <-k.Done:
+	default:
+	}
+	k.restore <- s
+	<-k.Done
+}
+
+func (k *Filter) applyRestoreLocked(s Snapshot) {
+	k.x = copyMatrix(s.X)
+	k.p = copyMatrix(s.P)
+	k.mode = s.Mode
+	k.consecutiveConverged = s.ConsecutiveConverged
+	// Resize/refresh NIS buffer to match snapshot. The filter was
+	// constructed with a particular buffer length via EnableStateMachine;
+	// if the snapshot's length differs the caller is restoring across
+	// configurations, which we accommodate.
+	if len(k.nisBuf) != len(s.NISBuf) {
+		k.nisBuf = make([]float64, len(s.NISBuf))
+	}
+	copy(k.nisBuf, s.NISBuf)
+	k.nisIdx = s.NISIdx
+	k.nisCount = s.NISCount
+	k.nisSum = s.NISSum
+}
+
+// copyMatrix returns an independent deep copy.
+func copyMatrix(m Matrix) Matrix {
+	out := make(Matrix, len(m))
+	for i, row := range m {
+		out[i] = append([]float64(nil), row...)
+	}
+	return out
 }
 
 // unlockAndInflate transitions LCK→CAL: resets the NIS window, resets
