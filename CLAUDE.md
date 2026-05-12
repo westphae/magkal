@@ -87,6 +87,18 @@ present, and is what the lock/unlock architecture is meant to neutralize.
       relearn quickly.
   Consumers that don't call `EnableStateMachine` see no behavior change
   (cmd/websim, cmd/sim).
+- **Seed-from-bracket bootstrap** (`SeedKL(k, l)`): writes a pre-computed
+  `(k, l)` into the state and resets `P` to its initial diagonal. Used
+  by cmd/websim's guided "INIT" calibration mode to put the filter in
+  the right basin of attraction before the EKF starts updating — when
+  the scalar `‖n‖²=n0²` measurement is the only observation, the EKF
+  has a continuous manifold of valid `(k, l)` fits and gradient-descends
+  into whichever local minimum is closest to `(1, 0)`; for any device
+  with a non-trivial hard-iron offset that minimum is the wrong one.
+  Hand-rotating to bracket each axis, then seeding `l_i=(max+min)/2`
+  and `k_i=n0/((max-min)/2)`, lands the filter near truth so subsequent
+  CAL updates refine rather than diverge. INIT is a websim-level concept
+  (it's not a filter mode); the filter just sees a `SeedKL` call.
 - `matrices.go` defines `type Matrix [][]float64` and the basic linalg
   helpers. The repo deliberately uses plain slices instead of `gonum`.
 - The package doc comment ("aggregates measurements") is stale — the
@@ -109,8 +121,10 @@ circle/sphere), `body_frame` (aircraft holding a nominal (heading, pitch,
 roll) with jitter on each, with the Earth field rotated into body frame
 using `truth.inclination_deg`), `perturb` (additive shift to `truth.l`
 with no measurements; used to simulate an external magnetic disturbance
-mid-script). Each step has a `label` that flows into output so segments
-can be sliced.
+mid-script), `samples` (raw recorded magnetometer readings — each row
+pushed to the filter unchanged, no `SynthMeasurement`, no rng draw;
+written by cmd/websim's record-to-file feature). Each step has a `label`
+that flows into output so segments can be sliced.
 
 Canonical scenarios in `cmd/replay/scripts/`:
 - `box.yaml` — well-conditioned 2D baseline.
@@ -166,6 +180,15 @@ post-update state.
   context so live scrubber drags preempt in-progress seeks. `ForceLock`
   / `ForceUnlock` on the filter are wired to the UI's "Force Lock" /
   "Force Unlock" buttons.
+- `recorder.go` owns Actual-source recording. When `params.RecordFile`
+  is non-empty and `Source == actual`, each raw measurement returned by
+  `c.measurer` is teed into an in-memory buffer; on filename/source/n/n0
+  change or connection close the buffer is flushed to
+  `cmd/replay/scripts/<RecordFile>.yaml` as a new `samples` step. If the
+  file already exists, the step is appended (provided `truth.n` and
+  `truth.n0` match) so stop/restart recordings show up as distinct
+  labeled segments in the loaded scenario. Truth k=[1,1,1], l=[0,0,0]
+  are placeholders — the values aren't read at replay time.
 - `measurer.go` defines the `measurer` interface and several sources:
   - `manual` — measurement direction supplied by the client.
   - `random` — auto-generated angles; the 2D version simulates a slowly

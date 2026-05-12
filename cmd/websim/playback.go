@@ -223,10 +223,19 @@ func (p *playback) applyGen(g scenario.Generated, rng *rand.Rand) []float64 {
 		p.maybeCheckpoint()
 		return nil
 	}
-	m := scenario.SynthMeasurement(
-		p.truth.N, g.Dir.Theta, g.Dir.Phi,
-		p.truth.K, p.truth.L, p.truth.N0, p.truth.Noise, rng,
-	)
+	var m []float64
+	if g.Kind == scenario.KindSamples {
+		// Recorded sensor data — push straight through, no synthesis,
+		// no rng draw (so measuredSoFar is unaffected and seek's rng
+		// reconstruction still lines up with the synthesis steps).
+		m = append([]float64(nil), g.Raw...)
+	} else {
+		m = scenario.SynthMeasurement(
+			p.truth.N, g.Dir.Theta, g.Dir.Phi,
+			p.truth.K, p.truth.L, p.truth.N0, p.truth.Noise, rng,
+		)
+		p.measuredSoFar++
+	}
 	// Drain any stale Done signal so the post-Z <-kf.Done can't
 	// pick up a leftover from a prior iteration.
 	select {
@@ -237,7 +246,6 @@ func (p *playback) applyGen(g scenario.Generated, rng *rand.Rand) []float64 {
 	p.kf.Z <- p.truth.N0 * p.truth.N0
 	<-p.kf.Done
 	p.step++
-	p.measuredSoFar++
 	p.maybeCheckpoint()
 	return m
 }

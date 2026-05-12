@@ -3,6 +3,11 @@ package main
 import (
 	"math"
 	"math/rand"
+
+	"github.com/kidoman/embd"
+	_ "github.com/kidoman/embd/host/all"
+	_ "github.com/kidoman/embd/host/rpi"
+	"github.com/westphae/goflying/sensors/icm20948"
 )
 
 const deg = math.Pi / 180
@@ -131,23 +136,37 @@ func makeManualMeasurer(n int, n0 float64, k, l []float64, r float64) (m measure
 	}, nil
 }
 
-// makeActualMeasurer creates a function that returns a new measurement of m, the magnetometer measurement.
-// Inputs:
-//   r: noise level
-// The returned function takes a rough measurement just to satisfy the interface, but doesn't use it.
-/*
-func makeActualMeasurer() (m measurer, err error) {
-	mpu, err := mpu9250.NewMPU9250(nil, 0, 250, 4, 50, true, false)
-	if err != nil {
-		return nil, err
+// actualMPU is a process-wide singleton ICM-20948 handle. The Pi has one
+// physical sensor; re-initializing on every params change would leak I²C
+// handles and the driver's polling goroutine. First "Actual" selection
+// initializes; later selections reuse the handle. Not closed; process
+// exit terminates the driver goroutine.
+var actualMPU *icm20948.ICM20948
+
+// makeActualMeasurer returns a measurer that reads the physical ICM-20948
+// over I²C bus 1 at MPU_ADDRESS1. M1/M2/M3 are AK09916 readings in µT;
+// the driver's user-cal matrix is reset to identity so the EKF sees
+// pre-calibration data regardless of /etc/imu_cal.json contents.
+func makeActualMeasurer() (measurer, error) {
+	if actualMPU == nil {
+		// embd's DetectHost() runs `uname -r` and chokes on modern Pi
+		// kernel strings (e.g. "6.12.62+rpt-rpi-v8") because parseVersion
+		// tries to Atoi("62+rpt"). SetHost bypasses detection; the RPi
+		// describer's I2CDriver doesn't read the revision number, so any
+		// value works.
+		embd.SetHost(embd.HostRPi, 0)
+		bus := embd.NewI2CBus(1)
+		mpu, err := icm20948.NewICM20948(&bus, icm20948.MPU_ADDRESS1,
+			250, 4, 50, true, false)
+		if err != nil {
+			return nil, err
+		}
+		mpu.IMUCalData.Reset()
+		actualMPU = mpu
 	}
-	// defer mpu.CloseMPU() // This really should be closed. Move into goroutine.
-
-	var data *sensors.IMUData
-
-	return func(a direction) (m measurement) {
-		data = <-mpu.C
-		return []float64{data.M1, data.M2, data.M3}
+	mpu := actualMPU
+	return func(_ direction) measurement {
+		data := <-mpu.C
+		return measurement{data.M1, data.M2, data.M3}
 	}, nil
 }
-*/

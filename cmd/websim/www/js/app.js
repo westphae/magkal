@@ -36,6 +36,21 @@ vm = new Vue({
         mode: '',
         nis: null,
         converged: false,
+        // Actual-source recording: when non-blank, server appends each raw
+        // measurement to cmd/replay/scripts/<recordFile>.yaml as a samples step.
+        recordFile: '',
+        // Guided manual-calibration state. While mode==='INIT' the server
+        // sends initStats on every measurement; client uses min/max to
+        // preview the seed (k, l) before the user clicks Finish.
+        initStats: null,
+        // Latest raw measurement, mirrored from msg.measurement into a
+        // reactive field so the INIT-bar's current-value dot re-renders.
+        // (this.data is non-reactive — used only as a passive store for
+        // analysis.js plots.)
+        currentM: [null, null, null],
+        // SVG dimensions for the per-axis INIT coverage bar.
+        barW: 320,
+        barH: 28,
         // Scenario state.
         scenarios: [],
         scenarioPick: '',
@@ -182,7 +197,8 @@ vm = new Vue({
                 stateMachineOn: !!this.smOn,
                 lockHysteresis: this.lockHysteresis,
                 nisWindow:      this.nisWindow,
-                nisThreshold:   this.nisThreshold
+                nisThreshold:   this.nisThreshold,
+                recordFile:     this.recordFile || ''
             };
             this.ws.send(JSON.stringify({"params": params}));
         },
@@ -215,6 +231,43 @@ vm = new Vue({
 
         forceLock:   function () { this.ws.send(JSON.stringify({"setMode": "LCK"})); },
         forceUnlock: function () { this.ws.send(JSON.stringify({"setMode": "CAL"})); },
+
+        // Guided-calibration controls.
+        startInit:   function () {
+            this.initStats = null;
+            this.ws.send(JSON.stringify({"startInit": true}));
+        },
+        finishInit:  function () { this.ws.send(JSON.stringify({"finishInit": true})); },
+
+        // Per-axis seed preview shown in the INIT table. Matches the
+        // server's seed math: l_i = (max+min)/2, k_i = n0/((max-min)/2).
+        initSeedL:   function (i) {
+            if (!this.initStats || this.initStats.count === 0) return null;
+            return (this.initStats.max[i] + this.initStats.min[i]) / 2;
+        },
+        initSeedK:   function (i) {
+            if (!this.initStats || this.initStats.count === 0) return null;
+            var half = (this.initStats.max[i] - this.initStats.min[i]) / 2;
+            if (half <= 0) return 1;
+            return this.n0 / half;
+        },
+
+        // INIT-bar math. The bar is centered on L_seed and spans ±1.15·N0
+        // so a small overflow (observed extends past expected) stays
+        // visible. barScale converts µT-delta to SVG-pixel-delta.
+        barScale:    function () {
+            if (!this.n0 || this.n0 <= 0) return 1;
+            return (this.barW / 2) / (this.n0 * 1.15);
+        },
+        barXFromVal: function (i, v) {
+            var L = this.initSeedL(i);
+            if (L == null || v == null) return this.barW / 2;
+            return this.barW / 2 + (v - L) * this.barScale();
+        },
+        barWidthOf:  function (width) {
+            if (!isFinite(width) || width < 0) return 0;
+            return width * this.barScale();
+        },
 
         // Fires when the user edits any convergence/state-machine field.
         // In scenario mode we apply immediately to the loaded scenario's
@@ -272,6 +325,10 @@ vm = new Vue({
             if (msg.hasOwnProperty('nis')       && msg.nis !== null)       this.nis = msg.nis;
             if (msg.hasOwnProperty('converged') && msg.converged !== null) this.converged = msg.converged;
             if (msg.hasOwnProperty('playback')  && msg.playback !== null)  this.playback = msg.playback;
+            if (msg.initStats) this.initStats = msg.initStats;
+            // Once the server transitions out of INIT (Finish or Restart),
+            // drop the stale stats so the panel collapses cleanly.
+            if (msg.mode && msg.mode !== 'INIT') this.initStats = null;
 
             if (msg.params) {
                 params = msg.params;
@@ -292,6 +349,7 @@ vm = new Vue({
                 if (params.lockHysteresis) this.lockHysteresis = params.lockHysteresis;
                 if (params.nisWindow)      this.nisWindow      = params.nisWindow;
                 if (params.nisThreshold)   this.nisThreshold   = params.nisThreshold;
+                if (params.recordFile != null) this.recordFile = params.recordFile;
 
                 // Seed the data object used by analysis.js plots.
                 this.data['N0'] = this.n0;
@@ -317,6 +375,11 @@ vm = new Vue({
 
             if (msg.measurement) {
                 for (var i = 0; i < this.n; i++) this.data['M' + (i+1)] = msg.measurement[i];
+                // Reactive mirror for the INIT-bar's current-value dot.
+                // Replace the whole array so Vue 2's reactivity picks it up.
+                var cm = [null, null, null];
+                for (var i = 0; i < Math.min(3, msg.measurement.length); i++) cm[i] = msg.measurement[i];
+                this.currentM = cm;
                 dispatch.call("measurement", this, this.data);
             }
 

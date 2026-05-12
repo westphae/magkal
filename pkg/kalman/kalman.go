@@ -519,6 +519,46 @@ func copyMatrix(m Matrix) Matrix {
 	return out
 }
 
+// SeedKL writes (kSeed, lSeed) into the filter's state x and resets P to
+// its initial diagonal values, dropping any accumulated correlations.
+// Used to bootstrap the filter from a non-EKF preprocessing step, e.g.
+// the INIT-mode hand-rotation calibration in cmd/websim: when the user
+// hand-rotates through enough orientations to bracket each axis, the
+// midpoint of (min, max) is a sphere-center estimate for l, and the
+// half-range divided by n0 inverts to a k estimate. Seeding these
+// values before the EKF starts puts it in the right basin of attraction
+// instead of letting it gradient-descend into a local minimum.
+//
+// Synchronous; blocks until the runFilter goroutine applies the change.
+// Panics on length mismatch to surface caller bugs immediately.
+func (k *Filter) SeedKL(kSeed, lSeed []float64) {
+	if len(kSeed) != k.n || len(lSeed) != k.n {
+		panic("kalman.SeedKL: length mismatch")
+	}
+	snap := k.Snapshot()
+	for i := 0; i < k.n; i++ {
+		snap.X[2*i][0] = kSeed[i]
+		snap.X[2*i+1][0] = lSeed[i]
+		for j := 0; j < 2*k.n; j++ {
+			snap.P[2*i][j] = 0
+			snap.P[2*i+1][j] = 0
+		}
+		snap.P[2*i][2*i] = k.sigmaK0 * k.sigmaK0
+		snap.P[2*i+1][2*i+1] = (k.n0 * k.sigmaK0) * (k.n0 * k.sigmaK0)
+	}
+	// Reset state-machine bookkeeping so a freshly-seeded filter starts
+	// in CAL with a clean consecutive-converged counter and NIS window.
+	snap.Mode = ModeCalibrating
+	snap.ConsecutiveConverged = 0
+	for i := range snap.NISBuf {
+		snap.NISBuf[i] = 0
+	}
+	snap.NISIdx = 0
+	snap.NISCount = 0
+	snap.NISSum = 0
+	k.Restore(snap)
+}
+
 // unlockAndInflate transitions LCK→CAL: resets the NIS window, resets
 // the consecutive-converged counter, and re-inflates P to its initial
 // diagonal values. State x is preserved (the prior calibration remains

@@ -76,6 +76,8 @@ type connectionState struct {
 	pb            *playback     // non-nil only when params.Source == scenario
 	playbackRng   *rand.Rand    // measurement-noise rng for playback ticks; reset on load/reset/seek
 	outCh         chan messageOut
+	recorder      *recorder     // non-nil only when params.Source == actual && params.RecordFile != ""
+	initBuf       *initBuffer   // non-nil while the user is in guided INIT mode
 }
 
 func handleConnections(w http.ResponseWriter, r *http.Request) {
@@ -139,6 +141,10 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		if c.pb != nil {
 			c.pb.cancelSeek()
 		}
+		if c.recorder != nil {
+			c.recorder.flush()
+			c.recorder = nil
+		}
 	}()
 
 	log.Println("Listening for messages from a new client")
@@ -173,9 +179,19 @@ func handleMessage(c *connectionState, msg messageIn, ticker *time.Ticker) *time
 	if msg.Params != nil {
 		applyParams(c, *msg.Params)
 		pushParamsAndState(c)
+		// Re-scan the scripts dir each time the user picks the Scenario
+		// source so freshly-recorded files appear in the dropdown without
+		// requiring a page refresh.
+		if c.params.Source == scenarioSrc {
+			scenarios := scenarioPicks()
+			c.outCh <- messageOut{Scenarios: &scenarios}
+		}
 	}
 	if msg.Measure != nil && c.measurer != nil {
 		c.measurement = c.measurer(msg.Measure.A)
+		if c.recorder != nil {
+			c.recorder.append(c.measurement)
+		}
 		c.outCh <- messageOut{Measurement: &c.measurement}
 	}
 	if msg.Estimate != nil {
@@ -185,6 +201,13 @@ func handleMessage(c *connectionState, msg messageIn, ticker *time.Ticker) *time
 		// command populated c.measurement.
 		if len(c.measurement) == 0 {
 			log.Printf("Estimate received with no prior measurement; ignoring")
+		} else if c.initBuf != nil {
+			// INIT mode: accumulate min/max only; the filter sits idle so
+			// we don't gradient-descend into a local minimum before the
+			// hand-rotation seed lands.
+			c.initBuf.add(c.measurement)
+			stats := c.initBuf.stats()
+			c.outCh <- messageOut{InitStats: &stats}
 		} else {
 			nn := msg.Estimate.NN
 			select {
@@ -194,6 +217,27 @@ func handleMessage(c *connectionState, msg messageIn, ticker *time.Ticker) *time
 			c.estimator.U <- kalman.Matrix{c.measurement}
 			c.estimator.Z <- nn
 			<-c.estimator.Done
+			pushManualState(c)
+		}
+	}
+	if msg.StartInit != nil && *msg.StartInit {
+		c.initBuf = newInitBuffer(c.params.N)
+		stats := c.initBuf.stats()
+		mode := effectiveMode(c)
+		c.outCh <- messageOut{Mode: &mode, InitStats: &stats}
+	}
+	if msg.FinishInit != nil && *msg.FinishInit {
+		if c.initBuf == nil {
+			log.Printf("FinishInit received with no active INIT buffer; ignoring")
+		} else if c.initBuf.count == 0 {
+			log.Printf("FinishInit received with empty buffer; ignoring")
+			c.initBuf = nil
+			pushManualState(c)
+		} else {
+			kSeed, lSeed := c.initBuf.seed(c.params.N0)
+			log.Printf("INIT seed: k=%v l=%v (from %d samples)", kSeed, lSeed, c.initBuf.count)
+			c.estimator.SeedKL(kSeed, lSeed)
+			c.initBuf = nil
 			pushManualState(c)
 		}
 	}
@@ -233,6 +277,10 @@ func handleMessage(c *connectionState, msg messageIn, ticker *time.Ticker) *time
 
 func applyParams(c *connectionState, p params) {
 	c.params = p
+	reconcileRecorder(c, p)
+	// Restart blows away any in-progress INIT calibration. The user has
+	// to re-enter INIT after a Restart if they want to seed again.
+	c.initBuf = nil
 	switch p.Source {
 	case manual:
 		c.measurer, _ = makeManualMeasurer(p.N, p.N0, *p.KAct, *p.LAct, p.N0*p.SigmaM)
@@ -242,8 +290,12 @@ func applyParams(c *connectionState, p params) {
 		// scenario source uses the playback object; no measurer assigned.
 		c.measurer = nil
 	case actual:
-		// MPU9250 path is currently commented out in measurer.go; leave
-		// measurer at its previous value rather than nilling it.
+		m, err := makeActualMeasurer()
+		if err != nil {
+			log.Printf("makeActualMeasurer failed (keeping previous source): %v", err)
+			break
+		}
+		c.measurer = m
 	case file:
 		// TODO: implement file source.
 	default:
@@ -260,6 +312,36 @@ func applyParams(c *connectionState, p params) {
 	if p.StateMachineOn && p.LockHysteresis > 0 && p.NISWindow > 0 && p.NISThreshold > 0 {
 		c.estimator.EnableStateMachine(p.LockHysteresis, p.NISWindow, p.NISThreshold)
 	}
+}
+
+// reconcileRecorder starts, flushes, or rotates c.recorder so that exactly
+// one recorder is alive iff source==actual and RecordFile is non-empty,
+// keyed by (filename, n, n0). Any (filename, n, n0) change closes the prior
+// recording session and starts a new one — producing a new labeled
+// `samples` step in the YAML.
+func reconcileRecorder(c *connectionState, p params) {
+	want := p.Source == actual && p.RecordFile != ""
+	if c.recorder != nil {
+		stale := !want ||
+			c.recorder.filename != normalizeRecordFile(p.RecordFile) ||
+			c.recorder.n != p.N ||
+			c.recorder.n0 != p.N0
+		if stale {
+			c.recorder.flush()
+			c.recorder = nil
+		}
+	}
+	if want && c.recorder == nil {
+		c.recorder = newRecorder(p.RecordFile, p.N, p.N0, p.SigmaK0, p.SigmaK, p.SigmaM)
+	}
+}
+
+// normalizeRecordFile mirrors newRecorder's basename+extension handling so
+// reconcileRecorder can compare the requested filename to the live one
+// without false rotations.
+func normalizeRecordFile(s string) string {
+	r := newRecorder(s, 0, 0, 0, 0, 0)
+	return r.filename
 }
 
 // applyPlaybackCmd updates the playback state per the command and returns
@@ -436,7 +518,7 @@ func pushParamsAndState(c *connectionState) {
 		return
 	}
 	st := state{K: c.estimator.K(), L: c.estimator.L(), P: c.estimator.P()}
-	mode := c.estimator.Mode().String()
+	mode := effectiveMode(c)
 	nis := c.estimator.NIS()
 	conv := c.estimator.Converged()
 	c.outCh <- messageOut{
@@ -450,7 +532,7 @@ func pushParamsAndState(c *connectionState) {
 
 func pushManualState(c *connectionState) {
 	st := state{K: c.estimator.K(), L: c.estimator.L(), P: c.estimator.P()}
-	mode := c.estimator.Mode().String()
+	mode := effectiveMode(c)
 	nis := c.estimator.NIS()
 	conv := c.estimator.Converged()
 	c.outCh <- messageOut{
@@ -459,6 +541,17 @@ func pushManualState(c *connectionState) {
 		NIS:       &nis,
 		Converged: &conv,
 	}
+}
+
+// effectiveMode returns "INIT" while the guided-calibration buffer is
+// active, otherwise the EKF's own mode ("CAL" / "LCK"). The scenario
+// path uses pb.kf.Mode() directly — INIT only applies to the top-level
+// estimator (manual/random/actual sources).
+func effectiveMode(c *connectionState) string {
+	if c.initBuf != nil {
+		return "INIT"
+	}
+	return c.estimator.Mode().String()
 }
 
 func readLoop(conn *websocket.Conn, inCh chan<- messageIn, closing <-chan struct{}) {

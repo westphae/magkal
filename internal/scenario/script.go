@@ -86,12 +86,23 @@ type PerturbStep struct {
 	Label  string    `yaml:"label"`
 }
 
+// SamplesStep carries raw magnetometer measurements captured from a real
+// sensor. Replay pushes each row to the filter unchanged (no SynthMeasurement
+// pass, no rng consumption). Each row's length must equal truth.n. Used by
+// cmd/websim's "Record" mode to persist Actual-source recordings for
+// reproducible later analysis.
+type SamplesStep struct {
+	Data  [][]float64 `yaml:"data"`
+	Label string      `yaml:"label"`
+}
+
 type Step struct {
 	Sweep     *SweepStep     `yaml:"sweep,omitempty"`
 	Hold      *HoldStep      `yaml:"hold,omitempty"`
 	Random    *RandomStep    `yaml:"random,omitempty"`
 	BodyFrame *BodyFrameStep `yaml:"body_frame,omitempty"`
 	Perturb   *PerturbStep   `yaml:"perturb,omitempty"`
+	Samples   *SamplesStep   `yaml:"samples,omitempty"`
 }
 
 type Script struct {
@@ -188,8 +199,16 @@ func (s *Script) Validate() error {
 				return fmt.Errorf("steps[%d]: perturb.delta_l must have length %d (got %d)", i, s.Truth.N, len(st.Perturb.DeltaL))
 			}
 		}
+		if st.Samples != nil {
+			n++
+			for j, row := range st.Samples.Data {
+				if len(row) != s.Truth.N {
+					return fmt.Errorf("steps[%d]: samples.data[%d] must have length %d (got %d)", i, j, s.Truth.N, len(row))
+				}
+			}
+		}
 		if n != 1 {
-			return fmt.Errorf("steps[%d] must have exactly one of sweep/hold/random/body_frame/perturb (got %d)", i, n)
+			return fmt.Errorf("steps[%d] must have exactly one of sweep/hold/random/body_frame/perturb/samples (got %d)", i, n)
 		}
 	}
 	return nil

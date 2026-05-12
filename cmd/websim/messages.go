@@ -35,15 +35,21 @@ type params struct {
 	// Scenario-only descriptive info; ignored on inbound params.
 	InclinationDeg float64 `json:"inclinationDeg,omitempty"`
 	Noise          float64 `json:"noise,omitempty"`
+
+	// When non-empty AND Source == actual, the server records each raw
+	// measurement to ../replay/scripts/<RecordFile>.yaml as a `samples`
+	// step. If the file already exists, a new step is appended (provided
+	// truth.n / truth.n0 still match); otherwise it's created fresh.
+	RecordFile string `json:"recordFile,omitempty"`
 }
 
 // Some sensible default parameters to start the user off
 var defaultParams = params{
 	Source:  manual,
 	N:       3,
-	N0:      10000.0,
+	N0:      50.0,
 	KAct:    &[]float64{0.8, 0.7, 0.9},
-	LAct:    &[]float64{1980, 1500, -1776},
+	LAct:    &[]float64{9.9, 7.5, -8.88},
 	SigmaK0: 0.25,
 	SigmaK:  0.00000001,
 	SigmaM:  0.05,
@@ -79,6 +85,21 @@ type messageIn struct {
 	LoadScenario *string      `json:"loadScenario"` // basename in cmd/replay/scripts/
 	PlaybackCmd  *playbackCmd `json:"playbackCmd"`
 	SetMode      *string      `json:"setMode"` // "CAL" or "LCK"
+	// Guided manual-calibration controls. StartInit enters the buffering
+	// phase (per-axis min/max accumulation); FinishInit computes a (k,l)
+	// seed and applies it to the filter via SeedKL before resuming CAL.
+	StartInit  *bool `json:"startInit"`
+	FinishInit *bool `json:"finishInit"`
+}
+
+// initStats reports the per-axis min/max/range and sample count gathered
+// during INIT mode. Pushed to the UI on every measurement received while
+// the calibration buffer is active.
+type initStats struct {
+	Min   []float64 `json:"min"`
+	Max   []float64 `json:"max"`
+	Range []float64 `json:"range"`
+	Count int       `json:"count"`
 }
 
 type state struct {
@@ -104,8 +125,9 @@ type messageOut struct {
 	Measurement *measurement    `json:"measurement"`
 	State       *state          `json:"state"`
 	Scenarios   *[]string       `json:"scenarios"` // sent on initial connect
-	Mode        *string         `json:"mode"`      // "CAL" / "LCK"
+	Mode        *string         `json:"mode"`      // "INIT" / "CAL" / "LCK"
 	NIS         *float64        `json:"nis"`
 	Converged   *bool           `json:"converged"`
 	Playback    *playbackStatus `json:"playback"`
+	InitStats   *initStats      `json:"initStats,omitempty"`
 }

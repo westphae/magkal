@@ -60,6 +60,61 @@
                 </div>
             </div>
 
+            <!-- Recording (Actual source only) -->
+            <div class="row" v-if="source == 3">
+                <div class="input-field col s12">
+                    <input type="text" v-model="recordFile" placeholder="leave blank to disable">
+                    <label :class="{active: recordFile}">Record to file (cmd/replay/scripts/*.yaml)</label>
+                </div>
+            </div>
+
+            <!-- Guided manual calibration (Actual source only).
+                 During INIT, hand-rotate the device to bracket each axis;
+                 the seed is (max+min)/2 for l and n0/half-range for k. -->
+            <div class="row init-cal" v-if="source == 3">
+                <div class="col s12">
+                    <p><b>Calibration:</b>
+                        <span class="mode-pill" :class="'mode-' + mode.toLowerCase()">{{ mode || '—' }}</span>
+                        <button class="btn btn-small" @click="startInit()" v-if="mode !== 'INIT'">Start Cal</button>
+                        <button class="btn btn-small" @click="finishInit()" v-if="mode === 'INIT'" :disabled="!initStats || initStats.count === 0">
+                            Finish — Apply Seed
+                        </button>
+                    </p>
+                    <!-- Per-axis coverage bars. Grey = expected (L_seed ± N0);
+                         coloured = observed (min..max); orange dot = current m. -->
+                    <div v-if="mode === 'INIT' && initStats && initStats.count > 0" class="init-bars">
+                        <div v-for="i in n" :key="'bar-' + (i-1)" class="init-bar-row">
+                            <span class="axis-label">m{{ i-1 }}</span>
+                            <svg :viewBox="'0 0 ' + barW + ' ' + barH" preserveAspectRatio="none" class="init-bar">
+                                <line :x1="barW/2" :x2="barW/2" y1="2" :y2="barH-2"
+                                      stroke="#bbb" stroke-dasharray="2,2"/>
+                                <rect :x="barXFromVal(i-1, initSeedL(i-1) - n0)"
+                                      y="8"
+                                      :width="barWidthOf(2 * n0)"
+                                      height="6" fill="#d0d0d0" rx="2"/>
+                                <rect :x="barXFromVal(i-1, initStats.min[i-1])"
+                                      y="17"
+                                      :width="barWidthOf(initStats.range[i-1])"
+                                      height="4" fill="#1e88e5" rx="2"/>
+                                <circle v-if="currentM[i-1] != null"
+                                        :cx="barXFromVal(i-1, currentM[i-1])"
+                                        :cy="barH - 6"
+                                        r="4" fill="#fb8c00"/>
+                            </svg>
+                            <span class="bar-numerics">
+                                L={{ fmt(initSeedL(i-1), 1) }}
+                                · min={{ fmt(initStats.min[i-1], 1) }}
+                                · max={{ fmt(initStats.max[i-1], 1) }}
+                                · k_seed={{ fmt(initSeedK(i-1), 2) }}
+                            </span>
+                        </div>
+                    </div>
+                    <p v-if="mode === 'INIT'" class="init-hint">
+                        Samples: {{ initStats ? initStats.count : 0 }}. Hand-rotate to extend each axis's range, then click Finish.
+                    </p>
+                </div>
+            </div>
+
             <!-- Scenario controls (Scenario source) -->
             <div v-if="source == 4">
                 <div class="row">

@@ -128,7 +128,13 @@ func run(s *scenario.Script) error {
 				segLastRecord = nil
 			}
 
-			m := scenario.SynthMeasurement(n, g.Dir.Theta, g.Dir.Phi, s.Truth.K, s.Truth.L, s.Truth.N0, s.Truth.Noise, rng)
+			var m []float64
+			if g.Kind == scenario.KindSamples {
+				// Recorded sensor data — push raw measurement straight through.
+				m = append([]float64(nil), g.Raw...)
+			} else {
+				m = scenario.SynthMeasurement(n, g.Dir.Theta, g.Dir.Phi, s.Truth.K, s.Truth.L, s.Truth.N0, s.Truth.Noise, rng)
+			}
 
 			// Drain any stale Done signal from a prior step before sending Z so the
 			// post-step <-kf.Done can't pick up a stale signal.

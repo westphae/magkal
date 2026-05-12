@@ -780,13 +780,18 @@ function MagInputArea(el, n, callback) {
         }, {"passive": false, "capture": true});
 
     this.update_measurement = function(datum) {
-        // Recover the true field components from the raw magnetometer
-        // reading. Forward model (cmd/websim/measurer.go): m = n/k + l,
-        // so n = k*(m - l). The earlier KAct*M + LAct form had a sign
-        // error that offset the marker dot by an l-dependent amount.
-        let n1 = datum['KAct1']*(datum['M1']-datum['LAct1']),
-            n2 = datum['KAct2']*(datum['M2']-datum['LAct2']),
-            n3 = datum['KAct3']*(datum['M3']-datum['LAct3']);
+        // Plot each measurement at the corrected (theta, phi) implied by
+        // the filter's CURRENT k/l estimate — not by KAct/LAct (which are
+        // truth or placeholder values, useless for the Actual source).
+        // Each dot is frozen at the position computed at the moment it
+        // came in; we deliberately don't re-project old dots when the
+        // estimate later improves. That makes the trail itself a
+        // diagnostic: as the EKF converges, fresh dots cluster on the
+        // unit sphere while early ones (taken with a worse estimate)
+        // stay where they were placed.
+        let n1 = datum['K1']*(datum['M1']-datum['L1']),
+            n2 = datum['K2']*(datum['M2']-datum['L2']),
+            n3 = datum['K3']*(datum['M3']-datum['L3']);
         let nn = Math.sqrt(n1*n1+n2*n2+n3*n3);
         let phi = this.n===3 ? Math.asin(n3/nn) : 0;
         let theta = Math.atan2(n2/(nn*Math.cos(phi)), n1/(nn*Math.cos(phi)));

@@ -22,17 +22,20 @@ const (
 	KindRandom    StepKind = "random"
 	KindBodyFrame StepKind = "body_frame"
 	KindPerturb   StepKind = "perturb"
+	KindSamples   StepKind = "samples"
 )
 
-// Generated is one entry in the expanded scenario stream. For measurement
-// kinds (everything except Perturb) Dir is meaningful and consumers should
-// synthesize a measurement at that direction. For Perturb, DeltaL carries
-// the truth mutation; consumers apply it and skip the filter update.
+// Generated is one entry in the expanded scenario stream. Meaning of fields
+// depends on Kind: for synthesis kinds (sweep/hold/random/body_frame) Dir is
+// the true direction and consumers run SynthMeasurement. For Perturb, DeltaL
+// is applied to truth.l. For Samples, Raw is the recorded measurement to push
+// to the filter unchanged (no rng draw, no SynthMeasurement).
 type Generated struct {
 	Kind   StepKind
 	Label  string
 	Dir    Direction
 	DeltaL []float64 // populated only when Kind == KindPerturb
+	Raw    []float64 // populated only when Kind == KindSamples
 }
 
 // Expand turns one YAML Step into the sequence of Generated entries it
@@ -54,6 +57,16 @@ func Expand(s Step, t Truth, rng *rand.Rand) []Generated {
 			Label:  s.Perturb.Label,
 			DeltaL: append([]float64(nil), s.Perturb.DeltaL...),
 		}}
+	case s.Samples != nil:
+		out := make([]Generated, 0, len(s.Samples.Data))
+		for _, row := range s.Samples.Data {
+			out = append(out, Generated{
+				Kind:  KindSamples,
+				Label: s.Samples.Label,
+				Raw:   append([]float64(nil), row...),
+			})
+		}
+		return out
 	}
 	return nil
 }

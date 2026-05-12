@@ -78,6 +78,53 @@ main {
     font-size: 0.9em;
 }
 
+/* ===== Guided manual calibration (INIT mode) ===== */
+.init-cal {
+    background: #fafafa;
+    border-left: 3px solid #1e88e5;
+    padding: 8px 12px;
+    margin: 8px 0;
+}
+.init-cal .mode-pill {
+    display: inline-block;
+    font-family: monospace;
+    font-size: 0.8em;
+    padding: 2px 8px;
+    margin: 0 8px;
+    border-radius: 3px;
+    color: white;
+    background: #888;
+}
+.init-cal .mode-pill.mode-init { background: #1e88e5; }
+.init-cal .mode-pill.mode-cal  { background: #fb8c00; }
+.init-cal .mode-pill.mode-lck  { background: #43a047; }
+.init-cal .btn-small { margin-left: 8px; }
+.init-hint { color: #666; font-size: 0.85em; margin-top: 4px; }
+.init-bars { margin-top: 6px; }
+.init-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 0;
+}
+.init-bar-row .axis-label {
+    font-family: monospace;
+    font-size: 0.85em;
+    color: #555;
+    width: 24px;
+    text-align: right;
+}
+.init-bar {
+    width: 320px;
+    height: 28px;
+    flex: 0 0 auto;
+}
+.init-bar-row .bar-numerics {
+    font-family: monospace;
+    font-size: 0.8em;
+    color: #555;
+}
+
 /* State-machine enable checkbox sits at row baseline, not floated. */
 .sm-toggle { padding-top: 32px; }
 
