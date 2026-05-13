@@ -4,9 +4,6 @@ import (
 	"math"
 	"math/rand"
 
-	"github.com/kidoman/embd"
-	_ "github.com/kidoman/embd/host/all"
-	_ "github.com/kidoman/embd/host/rpi"
 	"github.com/westphae/goflying/sensors/icm20948"
 )
 
@@ -144,20 +141,15 @@ func makeManualMeasurer(n int, n0 float64, k, l []float64, r float64) (m measure
 var actualMPU *icm20948.ICM20948
 
 // makeActualMeasurer returns a measurer that reads the physical ICM-20948
-// over I²C bus 1 at MPU_ADDRESS1. M1/M2/M3 are AK09916 readings in µT;
-// the driver's user-cal matrix is reset to identity so the EKF sees
+// over the kernel IIO driver at MPU_ADDRESS1. M1/M2/M3 are AK09916 readings
+// in µT; the driver's user-cal matrix is reset to identity so the EKF sees
 // pre-calibration data regardless of /etc/imu_cal.json contents.
+//
+// Run websim under sudo: go-iio creates the hrtimer trigger via configfs,
+// which requires CAP_SYS_ADMIN.
 func makeActualMeasurer() (measurer, error) {
 	if actualMPU == nil {
-		// embd's DetectHost() runs `uname -r` and chokes on modern Pi
-		// kernel strings (e.g. "6.12.62+rpt-rpi-v8") because parseVersion
-		// tries to Atoi("62+rpt"). SetHost bypasses detection; the RPi
-		// describer's I2CDriver doesn't read the revision number, so any
-		// value works.
-		embd.SetHost(embd.HostRPi, 0)
-		bus := embd.NewI2CBus(1)
-		mpu, err := icm20948.NewICM20948(&bus, icm20948.MPU_ADDRESS1,
-			250, 4, 50, true, false)
+		mpu, err := icm20948.NewICM20948(icm20948.MPU_ADDRESS1, 250, 4, 50)
 		if err != nil {
 			return nil, err
 		}
