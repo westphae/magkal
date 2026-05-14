@@ -2,8 +2,8 @@ github.com/gorilla/websocket v1.5.3 h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aN
 github.com/gorilla/websocket v1.5.3/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
 github.com/westphae/go-iio v0.2.0 h1:j+bHJfcU9aNoIqxkiM5zOdlFXRPc/gXgmdJy8xiLd4I=
 github.com/westphae/go-iio v0.2.0/go.mod h1:X5chNz0NzMy14oym4q796Y7dIs9FA47POY1nlkDA1po=
-github.com/westphae/goflying v0.6.1-0.20260513200734-e5018303242c h1:F3J/nbXAafqo3I2lzqKvYgGkd5W4maXdGEA3fs0pa4E=
-github.com/westphae/goflying v0.6.1-0.20260513200734-e5018303242c/go.mod h1:xS9w6gKKJ2yfU1/61qlbCoIbwlTLNkE1c3zxxJeVO8Q=
+github.com/westphae/goflying v0.6.1 h1:0tdgqLyh3dAP8dihYq2FdixHgGR2nwmf9wDqIpj69Ns=
+github.com/westphae/goflying v0.6.1/go.mod h1:fR71EjUiMXbybS8aCPCSJ+EnDIFhMapzfoiMmQZS8K8=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
