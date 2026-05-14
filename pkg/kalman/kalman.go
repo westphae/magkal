@@ -192,12 +192,18 @@ func (k *Filter) runFilter() {
 			s = matAdd(k.r, matMul(h, matMul(k.p, matTranspose(h))))
 			log.Printf("Inn Cov s = %v\n", s)
 
-			if k.stateMachineEnabled && k.mode == ModeLocked {
-				// LOCKED: monitor NIS, don't update state or P.
-				nis := y * y / s[0][0]
-				k.nisPush(nis)
-				if k.nisCount >= len(k.nisBuf) && k.nisSum/float64(k.nisCount) > k.nisThreshold {
-					k.unlockAndInflate()
+			if k.mode == ModeLocked {
+				// LOCKED: don't update state or P. NIS monitoring + the
+				// auto-unlock check are gated on the state machine being
+				// enabled, so a Force-Lock without a full state machine
+				// still freezes the filter (which is the manual override
+				// the UI exposes).
+				if k.stateMachineEnabled && len(k.nisBuf) > 0 {
+					nis := y * y / s[0][0]
+					k.nisPush(nis)
+					if k.nisCount >= len(k.nisBuf) && k.nisSum/float64(k.nisCount) > k.nisThreshold {
+						k.unlockAndInflate()
+					}
 				}
 			} else {
 				// CALIBRATING (or state machine disabled): normal EKF update.
@@ -231,16 +237,14 @@ func (k *Filter) runFilter() {
 		case cmd := <-k.force:
 			// External force-lock / force-unlock dispatched here so it
 			// doesn't race with U/Z processing or with state reads.
+			// Both work independent of whether the auto state machine
+			// is enabled — they are the manual override the UI exposes.
 			switch cmd {
 			case forceCmdLock:
-				if k.stateMachineEnabled {
-					k.mode = ModeLocked
-					k.consecutiveConverged = 0
-				}
+				k.mode = ModeLocked
+				k.consecutiveConverged = 0
 			case forceCmdUnlock:
-				if k.stateMachineEnabled {
-					k.unlockAndInflate()
-				}
+				k.unlockAndInflate()
 			}
 			select {
 			case k.Done <- struct{}{}:
@@ -425,13 +429,11 @@ func (k *Filter) nisPush(nis float64) {
 
 // ForceUnlock transitions to ModeCalibrating and re-inflates P,
 // equivalent to the NIS-triggered automatic unlock. State x is
-// preserved. Useful for UI "force recalibration" and for tests. No-op
-// if EnableStateMachine has not been called. Synchronous: returns only
-// after the goroutine has applied the change.
+// preserved. Useful for UI "force recalibration" and for tests.
+// Works independent of whether the auto state machine is enabled —
+// the manual override doesn't require a configured state machine.
+// Synchronous: returns only after the goroutine has applied the change.
 func (k *Filter) ForceUnlock() {
-	if !k.stateMachineEnabled {
-		return
-	}
 	select {
 	case <-k.Done:
 	default:
@@ -443,12 +445,9 @@ func (k *Filter) ForceUnlock() {
 // ForceLock transitions to ModeLocked immediately, bypassing the
 // Converged()/lockHysteresis check. Use cautiously — locking before
 // the calibration is actually good will freeze it at a bad value. P
-// is left as-is (unlike unlock, which re-inflates). No-op if
-// EnableStateMachine has not been called. Synchronous.
+// is left as-is (unlike unlock, which re-inflates). Works independent
+// of whether the auto state machine is enabled. Synchronous.
 func (k *Filter) ForceLock() {
-	if !k.stateMachineEnabled {
-		return
-	}
 	select {
 	case <-k.Done:
 	default:

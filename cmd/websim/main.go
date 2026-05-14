@@ -263,14 +263,29 @@ func handleMessage(c *connectionState, msg messageIn, ticker *time.Ticker) *time
 	if msg.PlaybackCmd != nil && c.pb != nil {
 		ticker = applyPlaybackCmd(c, *msg.PlaybackCmd, ticker)
 	}
-	if msg.SetMode != nil && c.pb != nil {
+	if msg.SetMode != nil {
+		// Route the manual override to whichever filter is live for the
+		// current source: the playback's filter in Scenario mode, the
+		// top-level estimator otherwise. ForceLock/ForceUnlock work
+		// independent of EnableStateMachine, so Actual-mode users can
+		// freeze the filter without setting up the state-machine knobs.
+		var kf *kalman.Filter
+		if c.pb != nil {
+			kf = c.pb.kf
+		} else {
+			kf = c.estimator
+		}
 		switch *msg.SetMode {
 		case "LCK":
-			c.pb.kf.ForceLock()
+			kf.ForceLock()
 		case "CAL":
-			c.pb.kf.ForceUnlock()
+			kf.ForceUnlock()
 		}
-		pushPlaybackState(c, nil)
+		if c.pb != nil {
+			pushPlaybackState(c, nil)
+		} else {
+			pushManualState(c)
+		}
 	}
 	return ticker
 }

@@ -18,6 +18,15 @@ vm = new Vue({
         // Truth: array form so v-for can drive the inputs.
         kAct: [1.0, 1.0, 1.0],
         lAct: [0.0, 0.0, 0.0],
+        // "Current best estimate" for the Actual source. Updated only on
+        // explicit user actions — Finish (captures the INIT seed values)
+        // or Reset (back to (1, 0)). Persisted in localStorage so it
+        // survives Restart and page reload. Drives the dark-ellipse
+        // reference, the Actx/Acty markers on the plots, and the Δk/Δl
+        // column in the state table; Δ then meaningfully shows how the
+        // live filter diverges from the captured baseline.
+        bestK: [1.0, 1.0, 1.0],
+        bestL: [0.0, 0.0, 0.0],
         // Filter tuning.
         sigmaK0: 0.25,
         sigmaK: 0.01,
@@ -81,6 +90,7 @@ vm = new Vue({
 
     created: function() {
         self = this;
+        this.loadBest();
         this.ws = new WebSocket('ws://' + window.location.host + '/websocket');
         this.ws.addEventListener('open',  () => self.connected = true);
         this.ws.addEventListener('close', () => self.connected = false);
@@ -103,7 +113,20 @@ vm = new Vue({
         // server, we need to (a) re-init selects so dropdowns show options,
         // and (b) call updateTextFields so floating labels detect that
         // their inputs now have values and move above instead of overlapping.
-        source: function () { this.refreshMaterialize(); },
+        source: function () {
+            // Stop any in-flight measureMany loop and drop INIT preview
+            // state so old activity doesn't bleed across the switch.
+            if (this.measuring) this.pause();
+            this.initStats = null;
+            // Auto-commit the source change to the server. Without this
+            // the user must click Restart before the new source takes
+            // effect — Start Cal in particular would silently drive the
+            // previous (manual) measurer, which with a=null returns a
+            // random angle and so behaves like the Random source. Skip
+            // when the change is just echoing a server-driven params push.
+            if (params.source !== parseInt(this.source)) this.restart();
+            this.refreshMaterialize();
+        },
         scenarios: function () { this.refreshMaterialize(); },
         kAct: { deep: true, handler() { this.refreshMaterialize(); } },
         lAct: { deep: true, handler() { this.refreshMaterialize(); } }
@@ -232,12 +255,91 @@ vm = new Vue({
         forceLock:   function () { this.ws.send(JSON.stringify({"setMode": "LCK"})); },
         forceUnlock: function () { this.ws.send(JSON.stringify({"setMode": "CAL"})); },
 
-        // Guided-calibration controls.
+        // --- "Current best" (Actual source) ----------------------------
+        // localStorage round-trip for the persisted best estimate. Bad
+        // entries (NaN, wrong shape) are silently dropped so a stale
+        // value can't crash startup.
+        loadBest: function () {
+            try {
+                var k = JSON.parse(localStorage.getItem('magkal.bestK'));
+                var l = JSON.parse(localStorage.getItem('magkal.bestL'));
+                if (Array.isArray(k) && k.length === 3 && k.every(Number.isFinite)) this.bestK = k;
+                if (Array.isArray(l) && l.length === 3 && l.every(Number.isFinite)) this.bestL = l;
+            } catch (e) { /* ignore — fall back to defaults */ }
+        },
+        saveBest: function () {
+            try {
+                localStorage.setItem('magkal.bestK', JSON.stringify(this.bestK));
+                localStorage.setItem('magkal.bestL', JSON.stringify(this.bestL));
+            } catch (e) { /* ignore — localStorage may be disabled */ }
+        },
+        // Push bestK/bestL into the kAct/lAct arrays (drives the kErr/lErr
+        // computeds and the editable-input v-model) and into this.data
+        // (drives the dark-ellipse and Actx/Acty references inside
+        // analysis.js). Called whenever best changes or Actual mode is
+        // (re-)entered.
+        applyBestToData: function () {
+            this.kAct = this.bestK.slice();
+            this.lAct = this.bestL.slice();
+            for (var i = 0; i < 3; i++) {
+                this.data['KAct' + (i+1)] = this.bestK[i];
+                this.data['LAct' + (i+1)] = this.bestL[i];
+            }
+        },
+        resetBest: function () {
+            this.bestK = [1, 1, 1];
+            this.bestL = [0, 0, 0];
+            this.saveBest();
+            if (parseInt(this.source) === 3) {
+                this.applyBestToData();
+                // Force the plots to redraw with the new reference so the
+                // dark ellipse / centre dot snap back to (1, 0) without
+                // waiting for the next state push.
+                dispatch.call("estimate", this, this.data);
+            }
+        },
+
+        // Guided-calibration controls. The whole calibration boils down
+        // to "measure while hand-rotating, then commit the per-axis
+        // (max+min)/2 as l-seed". So Start auto-begins sampling, Reset
+        // wipes the server's INIT buffer without stopping sampling, and
+        // Finish captures the seed into the persisted best estimate
+        // before applying it to the filter.
         startInit:   function () {
             this.initStats = null;
             this.ws.send(JSON.stringify({"startInit": true}));
+            if (!this.measuring) this.measureMany();
         },
-        finishInit:  function () { this.ws.send(JSON.stringify({"finishInit": true})); },
+        resetInit:   function () {
+            // Server-side startInit handler creates a fresh initBuffer
+            // either way, so re-sending it during INIT just clears the
+            // current samples. Useful if the user spots a stray magnet
+            // mid-rotation and wants to restart the bracketing.
+            this.initStats = null;
+            this.ws.send(JSON.stringify({"startInit": true}));
+        },
+        finishInit:  function () {
+            // Capture the (k, l) seed client-side from the visible stats
+            // and write it to bestK/bestL before the server's response
+            // round-trips back. The server runs the same arithmetic and
+            // SeedKL's the filter; we just don't want the dark-ellipse
+            // to lag the filter by one message.
+            if (this.initStats && this.initStats.count > 0) {
+                var k = this.bestK.slice();
+                var l = this.bestL.slice();
+                for (var i = 0; i < this.n; i++) {
+                    var seedL = this.initSeedL(i);
+                    var seedK = this.initSeedK(i);
+                    if (seedL != null) l[i] = seedL;
+                    if (seedK != null) k[i] = seedK;
+                }
+                this.bestK = k;
+                this.bestL = l;
+                this.saveBest();
+                this.applyBestToData();
+            }
+            this.ws.send(JSON.stringify({"finishInit": true}));
+        },
 
         // Per-axis seed preview shown in the INIT table. Matches the
         // server's seed math: l_i = (max+min)/2, k_i = n0/((max-min)/2).
@@ -340,6 +442,10 @@ vm = new Vue({
                 // Reactive replacement of arrays so Vue tracks the change.
                 if (params.kAct) this.kAct = params.kAct.slice(0, 3).concat([1,1,1]).slice(0, 3);
                 if (params.lAct) this.lAct = params.lAct.slice(0, 3).concat([0,0,0]).slice(0, 3);
+                // Actual mode: ignore the server-side kAct/lAct placeholder
+                // and substitute the persisted best estimate so the dark
+                // ellipse / delta column have meaningful values.
+                if (params.source === 3) this.applyBestToData();
                 this.sigmaK0 = params.sigmaK0;
                 this.sigmaK  = params.sigmaK;
                 this.sigmaM  = params.sigmaM;

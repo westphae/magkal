@@ -76,6 +76,7 @@
                     <p><b>Calibration:</b>
                         <span class="mode-pill" :class="'mode-' + mode.toLowerCase()">{{ mode || '—' }}</span>
                         <button class="btn btn-small" @click="startInit()" v-if="mode !== 'INIT'">Start Cal</button>
+                        <button class="btn btn-small" @click="resetInit()" v-if="mode === 'INIT'">Reset</button>
                         <button class="btn btn-small" @click="finishInit()" v-if="mode === 'INIT'" :disabled="!initStats || initStats.count === 0">
                             Finish — Apply Seed
                         </button>
@@ -171,6 +172,21 @@
                             <span v-if="smOn"> · SM: hyst={{ lockHysteresis }}, nWin={{ nisWindow }}, nThr={{ nisThreshold }}</span>
                         </p>
                     </div>
+                </div>
+            </div>
+
+            <!-- Current-best reference (Actual source). The dark ellipse,
+                 reference dots, and Δk/Δl column all track this value.
+                 Auto-updates on every state change; preserved across
+                 Restart and reload; user can Reset back to (1, 0). -->
+            <div class="row best-est" v-if="source == 3">
+                <div class="col s12">
+                    <p>
+                        <b>Best estimate:</b>
+                        k=[{{ formatVec(bestK, 3) }}]
+                        · l=[{{ formatVec(bestL, 1) }}]
+                        <button class="btn btn-small" @click="resetBest()">Reset</button>
+                    </p>
                 </div>
             </div>
 
