@@ -64,6 +64,19 @@ func main() {
 	initTUI(addr)
 	defer stopTUI()
 
+	// Probe for a physical MPU at startup; if present, default the source
+	// to "actual" so a freshly-opened page on a real flight setup goes
+	// straight to live measurements instead of needing the user to flip
+	// the dropdown. The probe creates the I²C handle and hrtimer trigger
+	// once; subsequent per-connection makeActualMeasurer calls reuse the
+	// singleton, so the cost is paid here regardless.
+	if _, err := makeActualMeasurer(); err == nil {
+		defaultParams.Source = actual
+		ui.Logf("ICM-20948 detected; default source = actual")
+	} else {
+		ui.Logf("no ICM-20948 (%v); default source = manual", err)
+	}
+
 	fs := http.FileServer(http.Dir("www"))
 	http.Handle("/", fs)
 	http.HandleFunc("/websocket", handleConnections)
@@ -121,14 +134,15 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	// playback ticks, seek completions) are safe because conn.WriteJSON
 	// is not goroutine-safe but the channel serializes us to one writer.
 	c := &connectionState{
-		conn:   conn,
-		params: defaultParams,
+		conn: conn,
 		// Small buffer keeps the pause-to-visible-pause lag bounded; at
 		// displayCapHz the worst-case backlog is ~1 second.
 		outCh: make(chan messageOut, 16),
 	}
-	c.measurer, _ = makeManualMeasurer(c.params.N, c.params.N0, *c.params.KAct, *c.params.LAct, c.params.N0*c.params.SigmaM)
-	c.estimator = kalman.NewKalmanFilter(c.params.N, c.params.N0, c.params.SigmaK0, c.params.SigmaK, c.params.SigmaM)
+	// applyParams selects the right measurer for defaultParams.Source
+	// (actual when the MPU probe succeeded at startup, manual otherwise)
+	// and builds the estimator with the default tuning.
+	applyParams(c, defaultParams)
 
 	closing := make(chan struct{})
 	go writeLoop(conn, c.outCh, closing)
