@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -69,7 +68,7 @@ func (r *recorder) flush() {
 	path := filepath.Join(scriptsDir, r.filename)
 	script, err := r.loadOrInit(path)
 	if err != nil {
-		log.Printf("recorder: %v (recording discarded: %d samples)", err, len(r.data))
+		ui.Logf("recorder: %v (discarded %d samples)", err, len(r.data))
 		return
 	}
 	script.Steps = append(script.Steps, scenario.Step{
@@ -79,10 +78,10 @@ func (r *recorder) flush() {
 		},
 	})
 	if err := writeScript(path, script); err != nil {
-		log.Printf("recorder: write %s: %v", path, err)
+		ui.Logf("recorder: write %s: %v", path, err)
 		return
 	}
-	log.Printf("recorder: wrote %d samples to %s (label=%q)", len(r.data), path, r.label)
+	ui.Logf("recorder: wrote %d samples to %s (label=%q)", len(r.data), path, r.label)
 }
 
 // loadOrInit returns the existing scenario at path with the recorder's

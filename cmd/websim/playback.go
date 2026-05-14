@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -23,7 +22,7 @@ const scriptsDir = "../replay/scripts"
 func scenarioPicks() []string {
 	entries, err := os.ReadDir(scriptsDir)
 	if err != nil {
-		log.Printf("scenarioPicks: %v", err)
+		ui.Logf("scenarioPicks: %v", err)
 		return nil
 	}
 	out := []string{}

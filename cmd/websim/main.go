@@ -2,10 +2,12 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"math/rand"
 	"net/http"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -58,11 +60,30 @@ var upgrader = websocket.Upgrader{
 }
 
 func main() {
+	const addr = ":8000"
+	initTUI(addr)
+	defer stopTUI()
+
 	fs := http.FileServer(http.Dir("www"))
 	http.Handle("/", fs)
 	http.HandleFunc("/websocket", handleConnections)
-	log.Println("Listening for connections on port 8000")
-	log.Fatal(http.ListenAndServe(":8000", nil))
+	ui.Logf("listening on %s", addr)
+
+	// Run the HTTP server in a goroutine so SIGINT can flow through to
+	// stopTUI() (which restores the cursor); without this the TUI's
+	// terminal-mode tweaks leak into the parent shell after Ctrl-C.
+	srvErr := make(chan error, 1)
+	go func() { srvErr <- http.ListenAndServe(addr, nil) }()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	select {
+	case err := <-srvErr:
+		stopTUI()
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	case <-sigCh:
+	}
 }
 
 // connectionState holds everything the per-connection loop touches.
@@ -78,20 +99,23 @@ type connectionState struct {
 	outCh         chan messageOut
 	recorder      *recorder     // non-nil only when params.Source == actual && params.RecordFile != ""
 	initBuf       *initBuffer   // non-nil while the user is in guided INIT mode
+	steps         int           // EKF Z-updates this session (manual/random/actual paths)
 }
 
 func handleConnections(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("Error upgrading to websocket: %s\n", err)
+		ui.Logf("ws upgrade error: %s", err)
 		return
 	}
 	defer func() {
 		if err := conn.Close(); err != nil {
-			log.Printf("Error closing websocket: %s\n", err.Error())
+			ui.Logf("ws close error: %s", err.Error())
 		}
 	}()
-	log.Println("A client opened a connection")
+	ui.Logf("client connected (%s)", r.RemoteAddr)
+	ui.IncConnections(+1)
+	defer ui.IncConnections(-1)
 
 	// Single writer goroutine, fed by outCh. Multiple producers (read loop,
 	// playback ticks, seek completions) are safe because conn.WriteJSON
@@ -123,6 +147,7 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		NIS:       &nis,
 		Converged: &converged,
 	}
+	ui.PushFilterState(c.params.Source, c.estimator, mode, c.params, nil, 0)
 
 	// Ping-pong goroutine (unchanged in spirit; tolerant of conn closure).
 	startPinger(conn)
@@ -147,7 +172,6 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	log.Println("Listening for messages from a new client")
 	for {
 		var tickC <-chan time.Time
 		if playTicker != nil {
@@ -200,7 +224,7 @@ func handleMessage(c *connectionState, msg messageIn, ticker *time.Ticker) *time
 		// only meaningful for manual/random sources where a prior Measure
 		// command populated c.measurement.
 		if len(c.measurement) == 0 {
-			log.Printf("Estimate received with no prior measurement; ignoring")
+			ui.Logf("estimate received with no prior measurement; ignoring")
 		} else if c.initBuf != nil {
 			// INIT mode: accumulate min/max only; the filter sits idle so
 			// we don't gradient-descend into a local minimum before the
@@ -217,6 +241,7 @@ func handleMessage(c *connectionState, msg messageIn, ticker *time.Ticker) *time
 			c.estimator.U <- kalman.Matrix{c.measurement}
 			c.estimator.Z <- nn
 			<-c.estimator.Done
+			c.steps++
 			pushManualState(c)
 		}
 	}
@@ -228,14 +253,14 @@ func handleMessage(c *connectionState, msg messageIn, ticker *time.Ticker) *time
 	}
 	if msg.FinishInit != nil && *msg.FinishInit {
 		if c.initBuf == nil {
-			log.Printf("FinishInit received with no active INIT buffer; ignoring")
+			ui.Logf("FinishInit received with no active INIT buffer; ignoring")
 		} else if c.initBuf.count == 0 {
-			log.Printf("FinishInit received with empty buffer; ignoring")
+			ui.Logf("FinishInit received with empty buffer; ignoring")
 			c.initBuf = nil
 			pushManualState(c)
 		} else {
 			kSeed, lSeed := c.initBuf.seed(c.params.N0)
-			log.Printf("INIT seed: k=%v l=%v (from %d samples)", kSeed, lSeed, c.initBuf.count)
+			ui.Logf("INIT seed: k=%s l=%s (from %d samples)", fmtVec(kSeed), fmtVec(lSeed), c.initBuf.count)
 			c.estimator.SeedKL(kSeed, lSeed)
 			c.initBuf = nil
 			pushManualState(c)
@@ -244,9 +269,10 @@ func handleMessage(c *connectionState, msg messageIn, ticker *time.Ticker) *time
 	if msg.LoadScenario != nil {
 		pb, err := loadScenario(*msg.LoadScenario)
 		if err != nil {
-			log.Printf("loadScenario %q: %v", *msg.LoadScenario, err)
+			ui.Logf("loadScenario %q: %v", *msg.LoadScenario, err)
 			return ticker
 		}
+		ui.Logf("loaded scenario %q (%d steps)", *msg.LoadScenario, len(pb.gens))
 		if c.pb != nil {
 			c.pb.cancelSeek()
 		}
@@ -307,7 +333,7 @@ func applyParams(c *connectionState, p params) {
 	case actual:
 		m, err := makeActualMeasurer()
 		if err != nil {
-			log.Printf("makeActualMeasurer failed (keeping previous source): %v", err)
+			ui.Logf("makeActualMeasurer failed (keeping previous source): %v", err)
 			break
 		}
 		c.measurer = m
@@ -315,8 +341,10 @@ func applyParams(c *connectionState, p params) {
 		// TODO: implement file source.
 	default:
 		c.measurer, _ = makeManualMeasurer(p.N, p.N0, *p.KAct, *p.LAct, p.N0*p.SigmaM)
-		log.Printf("Received bad source: %d, setting Manual measurer", p.Source)
+		ui.Logf("bad source %d, falling back to manual", p.Source)
 	}
+	// Restart wipes per-connection counters along with the filter.
+	c.steps = 0
 	// Rebuild estimator. For scenario source, the playback object owns its
 	// own filter so the top-level estimator is unused there but we keep
 	// it valid for manual/random source transitions.
@@ -520,6 +548,7 @@ func pushPlaybackState(c *connectionState, m []float64) {
 		out.Measurement = &meas
 	}
 	c.outCh <- out
+	ui.PushFilterState(c.params.Source, c.pb.kf, mode, c.params, m, c.pb.step)
 }
 
 func pushPlaybackStatus(c *connectionState) {
@@ -540,6 +569,7 @@ func pushParamsAndState(c *connectionState) {
 			NIS:       &nis,
 			Converged: &conv,
 		}
+		ui.PushFilterState(c.params.Source, c.pb.kf, mode, c.params, nil, c.pb.step)
 		return
 	}
 	st := state{K: c.estimator.K(), L: c.estimator.L(), P: c.estimator.P()}
@@ -553,6 +583,7 @@ func pushParamsAndState(c *connectionState) {
 		NIS:       &nis,
 		Converged: &conv,
 	}
+	ui.PushFilterState(c.params.Source, c.estimator, mode, c.params, c.measurement, c.steps)
 }
 
 func pushManualState(c *connectionState) {
@@ -566,6 +597,7 @@ func pushManualState(c *connectionState) {
 		NIS:       &nis,
 		Converged: &conv,
 	}
+	ui.PushFilterState(c.params.Source, c.estimator, mode, c.params, c.measurement, c.steps)
 }
 
 // effectiveMode returns "INIT" while the guided-calibration buffer is
@@ -579,12 +611,26 @@ func effectiveMode(c *connectionState) string {
 	return c.estimator.Mode().String()
 }
 
+// fmtVec renders a small float vector compactly for messages-pane log lines.
+func fmtVec(v []float64) string {
+	var b strings.Builder
+	b.WriteString("[")
+	for i, x := range v {
+		if i > 0 {
+			b.WriteString(" ")
+		}
+		fmt.Fprintf(&b, "%.3g", x)
+	}
+	b.WriteString("]")
+	return b.String()
+}
+
 func readLoop(conn *websocket.Conn, inCh chan<- messageIn, closing <-chan struct{}) {
 	defer close(inCh)
 	for {
 		var msg messageIn
 		if err := conn.ReadJSON(&msg); err != nil {
-			log.Printf("Error reading from websocket: %v", err)
+			ui.Logf("ws read: %v", err)
 			return
 		}
 		select {
@@ -603,7 +649,7 @@ func writeLoop(conn *websocket.Conn, outCh <-chan messageOut, closing <-chan str
 				return
 			}
 			if err := conn.WriteJSON(msg); err != nil {
-				log.Printf("Error writing to websocket: %v", err)
+				ui.Logf("ws write: %v", err)
 				return
 			}
 		case <-closing:
@@ -618,7 +664,7 @@ func startPinger(conn *websocket.Conn) {
 		defer t.Stop()
 		for range t.C {
 			if err := conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(10*time.Second)); err != nil {
-				log.Printf("ws error sending ping: %s", err)
+				ui.Logf("ws ping: %s", err)
 				return
 			}
 		}
