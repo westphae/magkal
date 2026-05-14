@@ -221,7 +221,12 @@ vm = new Vue({
                 lockHysteresis: this.lockHysteresis,
                 nisWindow:      this.nisWindow,
                 nisThreshold:   this.nisThreshold,
-                recordFile:     this.recordFile || ''
+                recordFile:     this.recordFile || '',
+                // Seed the rebuilt filter from the persisted best estimate.
+                // Server applies this only when source == actual; in other
+                // modes the (k=1, l=0) cold-start is still the right thing.
+                seedK:          this.bestK.slice(0, 3),
+                seedL:          this.bestL.slice(0, 3)
             };
             this.ws.send(JSON.stringify({"params": params}));
         },

@@ -327,6 +327,16 @@ func applyParams(c *connectionState, p params) {
 	if p.StateMachineOn && p.LockHysteresis > 0 && p.NISWindow > 0 && p.NISThreshold > 0 {
 		c.estimator.EnableStateMachine(p.LockHysteresis, p.NISWindow, p.NISThreshold)
 	}
+	// Actual source: seed the freshly-built filter from the client's
+	// persisted best estimate so Restart resumes from the last known
+	// calibration instead of (k=1, l=0). The seed defaults to (1, 0) on
+	// the client side, so first-time users still get the cold-start
+	// behavior; only matters after the user has run INIT (or edited the
+	// best-estimate values directly).
+	if p.Source == actual && p.SeedK != nil && p.SeedL != nil &&
+		len(*p.SeedK) >= p.N && len(*p.SeedL) >= p.N {
+		c.estimator.SeedKL((*p.SeedK)[:p.N], (*p.SeedL)[:p.N])
+	}
 }
 
 // reconcileRecorder starts, flushes, or rotates c.recorder so that exactly

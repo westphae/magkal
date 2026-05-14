@@ -41,6 +41,13 @@ type params struct {
 	// step. If the file already exists, a new step is appended (provided
 	// truth.n / truth.n0 still match); otherwise it's created fresh.
 	RecordFile string `json:"recordFile,omitempty"`
+
+	// Persisted "best estimate" calibration, applied as the freshly-built
+	// filter's starting state when Source == actual. Lets Restart resume
+	// from the last known calibration instead of (k=1, l=0). Ignored for
+	// other sources (where (1, 0) is the right cold-start).
+	SeedK *[]float64 `json:"seedK,omitempty"`
+	SeedL *[]float64 `json:"seedL,omitempty"`
 }
 
 // Some sensible default parameters to start the user off
