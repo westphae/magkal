@@ -359,12 +359,28 @@ vm = new Vue({
             return this.n0 / half;
         },
 
-        // INIT-bar math. The bar is centered on L_seed and spans ±1.15·N0
-        // so a small overflow (observed extends past expected) stays
-        // visible. barScale converts µT-delta to SVG-pixel-delta.
+        // INIT-bar math. Each bar is centered on its own L_seed, but the
+        // half-width (in µT) is shared across all axes so relative widths
+        // are visually comparable. The default floor is ±1.15·N0; if any
+        // axis's observed range or current measurement falls outside that,
+        // the scale grows so the dot/rect stays on screen.
         barScale:    function () {
             if (!this.n0 || this.n0 <= 0) return 1;
-            return (this.barW / 2) / (this.n0 * 1.15);
+            var half = this.n0 * 1.15;
+            if (this.initStats && this.initStats.count > 0) {
+                for (var i = 0; i < this.n; i++) {
+                    var L = this.initSeedL(i);
+                    if (L == null) continue;
+                    half = Math.max(half,
+                        Math.abs(this.initStats.min[i] - L),
+                        Math.abs(this.initStats.max[i] - L));
+                    var cm = this.currentM[i];
+                    if (cm != null) half = Math.max(half, Math.abs(cm - L));
+                }
+                // Slight padding so the dot/rect doesn't kiss the edge.
+                half *= 1.05;
+            }
+            return (this.barW / 2) / half;
         },
         barXFromVal: function (i, v) {
             var L = this.initSeedL(i);
