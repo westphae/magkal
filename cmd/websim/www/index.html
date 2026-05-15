@@ -296,6 +296,9 @@
                         </tbody>
                     </table>
                     <p class="trp"><b>tr(P):</b> {{ fmtSci(trP) }}</p>
+                    <p class="rejected" :class="{'rejected-warn': rejected > 0}">
+                        <b>Rejected:</b> {{ rejected }}
+                    </p>
                 </div>
             </div>
         </div>

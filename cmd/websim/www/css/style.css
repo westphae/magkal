@@ -165,6 +165,8 @@ main {
 .err-warn { color: #ef6c00; }
 .err-bad  { color: #c62828; font-weight: bold; }
 .trp { font-family: monospace; margin-top: 8px; }
+.rejected { font-family: monospace; margin-top: 4px; color: #777; }
+.rejected-warn { color: #d84315; font-weight: bold; }
 
 /* Tighten Materialize row spacing slightly */
 .row { margin-bottom: 12px; }

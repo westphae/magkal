@@ -45,6 +45,10 @@ vm = new Vue({
         mode: '',
         nis: null,
         converged: false,
+        // Running count of measurements dropped by the server-side outlier
+        // filter (NaN/Inf, |n_est| > 10·n0, or >2× step change vs. the
+        // previous accepted value). Surfaces so a glitch burst is visible.
+        rejected: 0,
         // Actual-source recording: when non-blank, server appends each raw
         // measurement to cmd/replay/scripts/<recordFile>.yaml as a samples step.
         recordFile: '',
@@ -462,6 +466,7 @@ vm = new Vue({
             if (msg.hasOwnProperty('nis')       && msg.nis !== null)       this.nis = msg.nis;
             if (msg.hasOwnProperty('converged') && msg.converged !== null) this.converged = msg.converged;
             if (msg.hasOwnProperty('playback')  && msg.playback !== null)  this.playback = msg.playback;
+            if (msg.hasOwnProperty('rejected')  && msg.rejected  !== null) this.rejected = msg.rejected;
             if (msg.initStats) this.initStats = msg.initStats;
             // Once the server transitions out of INIT (Finish or Restart),
             // drop the stale stats so the panel collapses cleanly.
