@@ -168,6 +168,9 @@ main {
 .rejected { font-family: monospace; margin-top: 4px; color: #777; }
 .rejected-warn { color: #d84315; font-weight: bold; }
 .best-saved-at { color: #777; font-size: 0.9em; font-style: italic; margin-right: 6px; }
+.rec-status { font-family: monospace; font-size: 0.95em; margin: -8px 0 12px; }
+.rec-status .rec-buffered { color: #1565c0; }
+.rec-status button { margin-left: 8px; }
 
 /* Tighten Materialize row spacing slightly */
 .row { margin-bottom: 12px; }

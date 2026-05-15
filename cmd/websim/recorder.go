@@ -16,14 +16,16 @@ import (
 // tied to one filename + (n, n0) tuple; if the user changes any of these,
 // the old recorder is flushed and a new one started.
 type recorder struct {
-	filename string  // basename, with .yaml extension applied
-	n        int
-	n0       float64
-	sigmaK0  float64
-	sigmaK   float64
-	sigmaM   float64
-	label    string  // assigned at construction time; one label per session
-	data     [][]float64
+	filename    string  // basename, with .yaml extension applied
+	n           int
+	n0          float64
+	sigmaK0     float64
+	sigmaK      float64
+	sigmaM      float64
+	label       string  // assigned at construction time; one label per session
+	data        [][]float64
+	totalFlushed int       // cumulative samples written across all flushes this session
+	lastSavedAt time.Time // zero if nothing has been flushed yet
 }
 
 // newRecorder builds a recorder. filename is sanitized to a basename and
@@ -61,6 +63,9 @@ func (r *recorder) append(m []float64) {
 // exists, the recorder's session is appended to the existing scenario as
 // a new `samples` step (provided truth.n / truth.n0 match); otherwise a
 // fresh scenario is written. No-op if no samples have been collected.
+// On successful write, the buffer is drained so subsequent appends form
+// a new segment on the next flush — useful for the explicit "Save
+// Recording Now" UI action mid-session.
 func (r *recorder) flush() {
 	if len(r.data) == 0 {
 		return
@@ -71,6 +76,7 @@ func (r *recorder) flush() {
 		ui.Logf("recorder: %v (discarded %d samples)", err, len(r.data))
 		return
 	}
+	n := len(r.data)
 	script.Steps = append(script.Steps, scenario.Step{
 		Samples: &scenario.SamplesStep{
 			Data:  r.data,
@@ -81,7 +87,40 @@ func (r *recorder) flush() {
 		ui.Logf("recorder: write %s: %v", path, err)
 		return
 	}
-	ui.Logf("recorder: wrote %d samples to %s (label=%q)", len(r.data), path, r.label)
+	ui.Logf("recorder: wrote %d samples to %s (label=%q)", n, path, r.label)
+	r.totalFlushed += n
+	r.lastSavedAt = time.Now()
+	r.data = r.data[:0]
+}
+
+// recordingStatusSnapshot is the wire payload describing the active
+// recording. Filename is the basename of the destination YAML; Buffered
+// is the count of samples held in memory awaiting the next flush;
+// TotalFlushed is the cumulative count already written this session.
+type recordingStatusSnapshot struct {
+	Filename     string    `json:"filename"`
+	Buffered     int       `json:"buffered"`
+	TotalFlushed int       `json:"totalFlushed"`
+	LastSavedAt  time.Time `json:"lastSavedAt"`
+}
+
+// setLabel switches the label applied to subsequently-flushed segments.
+// Called by the websim flow to mark phase transitions (e.g.
+// init_<ts> → live_<ts> when guided calibration finishes), so the
+// resulting scenario YAML carries distinguishable segments. The
+// caller is expected to flush() any pending buffered data under the
+// old label first.
+func (r *recorder) setLabel(label string) {
+	r.label = label
+}
+
+func (r *recorder) status() recordingStatusSnapshot {
+	return recordingStatusSnapshot{
+		Filename:     r.filename,
+		Buffered:     len(r.data),
+		TotalFlushed: r.totalFlushed,
+		LastSavedAt:  r.lastSavedAt,
+	}
 }
 
 // loadOrInit returns the existing scenario at path with the recorder's

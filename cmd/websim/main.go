@@ -439,6 +439,17 @@ func handleMessage(c *connectionState, msg messageIn, ticker *time.Ticker) *time
 			}
 		}
 	}
+	if msg.SaveRecording != nil && *msg.SaveRecording {
+		// Explicit mid-session flush. flush() drains the buffer and
+		// updates lastSavedAt; pushManualState below picks up the new
+		// status snapshot for the client.
+		if c.recorder == nil {
+			ui.Logf("saveRecording: no active recorder")
+		} else {
+			c.recorder.flush()
+			pushManualState(c)
+		}
+	}
 	if msg.ResetBest != nil && *msg.ResetBest {
 		if err := deleteBestFile(); err != nil {
 			ui.Logf("resetBest: %v", err)
@@ -758,6 +769,7 @@ func pushParamsAndState(c *connectionState) {
 		NIS:       &nis,
 		Converged: &conv,
 		Rejected:  &rej,
+		Recording: recordingStatusFor(c),
 	}
 	ui.PushFilterState(c.params.Source, c.estimator, mode, c.params, c.measurement, c.steps, rej)
 }
@@ -774,8 +786,19 @@ func pushManualState(c *connectionState) {
 		NIS:       &nis,
 		Converged: &conv,
 		Rejected:  &rej,
+		Recording: recordingStatusFor(c),
 	}
 	ui.PushFilterState(c.params.Source, c.estimator, mode, c.params, c.measurement, c.steps, rej)
+}
+
+// recordingStatusFor returns the active recorder's wire snapshot, or nil
+// when no recording is in progress for this connection.
+func recordingStatusFor(c *connectionState) *recordingStatusSnapshot {
+	if c.recorder == nil {
+		return nil
+	}
+	s := c.recorder.status()
+	return &s
 }
 
 // pushRejected emits a counter-only update after the outlier filter

@@ -108,6 +108,10 @@ type messageIn struct {
 	// Force Lock was removed in favour of these.
 	SaveBest  *bool `json:"saveBest"`
 	ResetBest *bool `json:"resetBest"`
+	// SaveRecording forces the active recorder to flush its buffered
+	// samples to disk as a new labelled segment in the target YAML.
+	// No-op if no recording is active or the buffer is empty.
+	SaveRecording *bool `json:"saveRecording"`
 }
 
 // initStats reports the per-axis min/max/range and sample count gathered
@@ -159,6 +163,10 @@ type messageOut struct {
 	// for the dark-ellipse reference. P stays server-side; the client
 	// only needs (k, l) for display.
 	Best *bestSnapshot `json:"best,omitempty"`
+	// Recording mirrors the live recorder's state (filename, buffered
+	// sample count, last flush timestamp) so the UI can show progress
+	// and confirm saves. Nil when no recording is active.
+	Recording *recordingStatusSnapshot `json:"recording,omitempty"`
 }
 
 // bestSnapshot is the client-visible view of the saved best estimate.

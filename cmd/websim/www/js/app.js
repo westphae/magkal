@@ -52,6 +52,9 @@ vm = new Vue({
         // Actual-source recording: when non-blank, server appends each raw
         // measurement to cmd/replay/scripts/<recordFile>.yaml as a samples step.
         recordFile: '',
+        // Live recording status mirrored from the server. Null when no
+        // recording is active.
+        recording: null,
         // Guided manual-calibration state. While mode==='INIT' the server
         // sends initStats on every measurement; client uses min/max to
         // preview the seed (k, l) before the user clicks Finish.
@@ -259,11 +262,18 @@ vm = new Vue({
 
         // --- Server-persisted "known best" calibration -----------------
         // The save is deliberate: clicking Save Best sends the current
-        // filter (k, l, P) to the server, which writes ~/.magkal/best.json.
+        // filter (k, l, P) to the server, which writes ~/.config/magkal/best_fit.json.
         // The server then echoes the new snapshot back so bestK/bestL
         // refresh without needing a separate load.
         saveBestServer: function () {
             this.ws.send(JSON.stringify({"saveBest": true}));
+        },
+        saveRecording: function () {
+            // Force the server-side recorder to flush its buffered
+            // samples to disk as a new labelled segment. Useful before
+            // exiting so the user doesn't depend on graceful-shutdown
+            // cleanup for the most recent samples.
+            this.ws.send(JSON.stringify({"saveRecording": true}));
         },
         // Push bestK/bestL into the kAct/lAct arrays (drives the kErr/lErr
         // computeds and the editable-input v-model) and into this.data
@@ -434,6 +444,7 @@ vm = new Vue({
             if (msg.hasOwnProperty('converged') && msg.converged !== null) this.converged = msg.converged;
             if (msg.hasOwnProperty('playback')  && msg.playback !== null)  this.playback = msg.playback;
             if (msg.hasOwnProperty('rejected')  && msg.rejected  !== null) this.rejected = msg.rejected;
+            if (msg.hasOwnProperty('recording')) this.recording = msg.recording || null;
             if (msg.best) {
                 // Server-side persisted best (k, l). Empty K/L (or N==0)
                 // means "no saved best yet" — fall back to identity.

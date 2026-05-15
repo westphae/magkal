@@ -66,6 +66,19 @@
                     <input type="text" v-model="recordFile" placeholder="leave blank to disable">
                     <label :class="{active: recordFile}">Record to file (cmd/replay/scripts/*.yaml)</label>
                 </div>
+                <div class="col s12 rec-status" v-if="recording">
+                    <b>Recording:</b>
+                    {{ recording.filename }} —
+                    <span class="rec-buffered">{{ recording.buffered }} buffered</span>
+                    <span v-if="recording.totalFlushed">
+                        · {{ recording.totalFlushed }} saved
+                    </span>
+                    <span v-if="recording.lastSavedAt && !recording.lastSavedAt.startsWith('0001')">
+                        · last save {{ recording.lastSavedAt.substring(11, 19) }}
+                    </span>
+                    <button class="btn btn-small" @click="saveRecording()"
+                            :disabled="!recording.buffered">Save Recording</button>
+                </div>
             </div>
 
             <!-- Guided manual calibration (Actual source only).
