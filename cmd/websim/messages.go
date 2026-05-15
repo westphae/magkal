@@ -50,16 +50,26 @@ type params struct {
 	SeedL *[]float64 `json:"seedL,omitempty"`
 }
 
-// Some sensible default parameters to start the user off
+// Some sensible default parameters to start the user off.
+// MaxSigmaK / MaxSigmaL / state-machine triple are pre-set so a fresh
+// connection auto-locks once the filter converges, instead of leaving
+// Converged() at false forever (zero thresholds disable the check).
+// Values match cmd/replay/scripts/cruise_realistic.yaml.
 var defaultParams = params{
-	Source:  manual,
-	N:       3,
-	N0:      50.0,
-	KAct:    &[]float64{0.8, 0.7, 0.9},
-	LAct:    &[]float64{9.9, 7.5, -8.88},
-	SigmaK0: 0.25,
-	SigmaK:  0.00000001,
-	SigmaM:  0.05,
+	Source:         manual,
+	N:              3,
+	N0:             50.0,
+	KAct:           &[]float64{0.8, 0.7, 0.9},
+	LAct:           &[]float64{9.9, 7.5, -8.88},
+	SigmaK0:        0.25,
+	SigmaK:         0.00000001,
+	SigmaM:         0.05,
+	MaxSigmaK:      1e-3,
+	MaxSigmaL:      5.0,
+	StateMachineOn: true,
+	LockHysteresis: 10,
+	NISWindow:      100,
+	NISThreshold:   4.0,
 }
 
 type measureCmd struct {
