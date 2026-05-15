@@ -192,18 +192,24 @@ func (k *Filter) runFilter() {
 			s = matAdd(k.r, matMul(h, matMul(k.p, matTranspose(h))))
 			log.Printf("Inn Cov s = %v\n", s)
 
+			// NIS = y²/S is meaningful as a fit-quality metric in CAL too
+			// (after each update, "did the filter agree with this sample?"),
+			// so we accumulate it regardless of mode. The auto-unlock check
+			// still only fires in LCK, and CAL→LCK clears the buffer so
+			// post-lock samples drive the unlock decision in isolation.
+			if k.stateMachineEnabled && len(k.nisBuf) > 0 {
+				k.nisPush(y * y / s[0][0])
+			}
+
 			if k.mode == ModeLocked {
-				// LOCKED: don't update state or P. NIS monitoring + the
-				// auto-unlock check are gated on the state machine being
-				// enabled, so a Force-Lock without a full state machine
-				// still freezes the filter (which is the manual override
-				// the UI exposes).
-				if k.stateMachineEnabled && len(k.nisBuf) > 0 {
-					nis := y * y / s[0][0]
-					k.nisPush(nis)
-					if k.nisCount >= len(k.nisBuf) && k.nisSum/float64(k.nisCount) > k.nisThreshold {
-						k.unlockAndInflate()
-					}
+				// LOCKED: don't update state or P. The auto-unlock check is
+				// gated on the state machine being enabled, so a Force-Lock
+				// without a full state machine still freezes the filter
+				// (manual override the UI exposes).
+				if k.stateMachineEnabled &&
+					k.nisCount >= len(k.nisBuf) &&
+					k.nisSum/float64(k.nisCount) > k.nisThreshold {
+					k.unlockAndInflate()
 				}
 			} else {
 				// CALIBRATING (or state machine disabled): normal EKF update.
@@ -220,6 +226,17 @@ func (k *Filter) runFilter() {
 						k.consecutiveConverged++
 						if k.consecutiveConverged >= k.lockHysteresis {
 							k.mode = ModeLocked
+							// Reset the NIS rolling buffer so the LCK→CAL
+							// auto-unlock check only sees post-lock samples;
+							// the CAL-era values that just accumulated would
+							// otherwise dominate the mean and could fire an
+							// immediate unlock.
+							for i := range k.nisBuf {
+								k.nisBuf[i] = 0
+							}
+							k.nisIdx = 0
+							k.nisCount = 0
+							k.nisSum = 0
 						}
 					} else {
 						k.consecutiveConverged = 0
@@ -404,9 +421,12 @@ func (k *Filter) Mode() Mode {
 }
 
 // NIS returns the most recent rolling-window mean of the normalized
-// innovation squared (y²/S). Useful for instrumentation. Returns 0 if
-// no NIS samples have been recorded yet (i.e. before the first LOCKED
-// sample) or if the state machine isn't enabled.
+// innovation squared (y²/S). Updated on every Z while the state machine
+// is enabled, regardless of mode — usable as a fit-quality indicator in
+// CAL as well as in LCK. The buffer is reset on each CAL→LCK transition
+// so the auto-unlock decision draws from post-lock samples only.
+// Returns 0 if the state machine isn't enabled or no samples are in the
+// buffer yet.
 func (k *Filter) NIS() float64 {
 	if k.nisCount == 0 {
 		return 0
