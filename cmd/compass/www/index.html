@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>MagKal Compass</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    <link rel="stylesheet" type="text/css" href="css/materialize.min.css" media="screen,projection">
+    <link rel="stylesheet" type="text/css" href="css/style.css">
+</head>
+<body>
+<main id="app">
+    <header>
+        <nav>
+            <div class="nav-wrapper">
+                <span :class="connected ? 'connected' : 'disconnected'" class="status-pill">
+                    {{ connected ? 'Connected' : 'Disconnected' }}
+                </span>
+                <a href="/" class="brand-logo right">MagKal Compass</a>
+            </div>
+        </nav>
+    </header>
+
+    <div class="row" style="margin: 12px 0;">
+        <div class="col s12">
+            <button class="btn waves-effect waves-light" @click="doAlign()" :disabled="!alignReady">
+                <i class="material-icons left">explore</i>Align (use GPS track + accel)
+            </button>
+            <label style="margin-left: 24px;">
+                <input type="checkbox" v-model="tiltComp" @change="setTilt()"/>
+                <span>Tilt compensation</span>
+            </label>
+            <span class="hint">
+                Yaw offset: {{ alignYawDeg != null ? alignYawDeg.toFixed(2) + '°' : '—' }}
+                <span v-if="alignSavedAt"> (saved {{ alignSavedAt }})</span>
+            </span>
+            <span v-if="error" class="error-msg">{{ error }}</span>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col s12 m6">
+            <div class="card">
+                <div class="card-content">
+                    <span class="card-title">Heading</span>
+                    <div class="compass-wrap">
+                        <svg viewBox="-110 -110 220 220" class="compass-svg">
+                            <circle cx="0" cy="0" r="100" class="compass-ring"/>
+                            <g v-for="t in tickMarks" :key="'t'+t.deg">
+                                <line :x1="t.x1" :y1="t.y1" :x2="t.x2" :y2="t.y2" class="compass-tick"/>
+                                <text v-if="t.label" :x="t.lx" :y="t.ly" text-anchor="middle" dominant-baseline="middle"
+                                      class="compass-label">{{ t.label }}</text>
+                            </g>
+                            <!-- GPS track needle (truth) -->
+                            <line v-if="trackMagDeg != null" :x1="0" :y1="0"
+                                  :x2="needle(trackMagDeg).x" :y2="needle(trackMagDeg).y" class="needle-track"/>
+                            <!-- Mag heading needle (predicted) -->
+                            <line v-if="headingVehDeg != null" :x1="0" :y1="0"
+                                  :x2="needle(headingVehDeg).x" :y2="needle(headingVehDeg).y" class="needle-mag"/>
+                            <circle cx="0" cy="0" r="3" fill="#333"/>
+                        </svg>
+                    </div>
+                    <table class="reading-table">
+                        <tr>
+                            <td><span class="dot dot-track"></span>GPS track (mag)</td>
+                            <td>{{ fmtDeg(trackMagDeg) }}</td>
+                            <td class="dim">true {{ fmtDeg(trackTrueDeg) }}</td>
+                        </tr>
+                        <tr>
+                            <td><span class="dot dot-mag"></span>Mag heading (vehicle)</td>
+                            <td>{{ fmtDeg(headingVehDeg) }}</td>
+                            <td class="dim">sensor {{ fmtDeg(headingSensorDeg) }}</td>
+                        </tr>
+                        <tr>
+                            <td>Error</td>
+                            <td>{{ headingErrorDeg != null ? headingErrorDeg.toFixed(2) + '°' : '—' }}</td>
+                            <td></td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="col s12 m6">
+            <div class="card">
+                <div class="card-content">
+                    <span class="card-title">Magnetometer (µT)</span>
+                    <table class="reading-table">
+                        <thead>
+                            <tr><th></th><th>Sensor raw</th><th>Calibrated</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="axis in ['X','Y','Z']" :key="axis">
+                                <td>{{ axis }}</td>
+                                <td>{{ fmt2(magRaw && magRaw[axis.toLowerCase()]) }}</td>
+                                <td>{{ fmt2(magCal && magCal[axis.toLowerCase()]) }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <div class="hint">
+                        |cal| = {{ magCalMag != null ? magCalMag.toFixed(2) : '—' }} µT;
+                        n₀ = {{ n0Ut != null ? n0Ut.toFixed(2) : '—' }} µT
+                        <span v-if="geomagFallback" class="dim">(fallback)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col s12 m6">
+            <div class="card"><div class="card-content">
+                <span class="card-title">GPS</span>
+                <table class="reading-table">
+                    <tr><td>Mode</td><td>{{ gpsModeLabel }}</td></tr>
+                    <tr><td>Lat</td><td>{{ fmt6(gpsLat) }}</td></tr>
+                    <tr><td>Lon</td><td>{{ fmt6(gpsLon) }}</td></tr>
+                    <tr><td>Alt (MSL)</td><td>{{ fmt2(gpsAlt) }} m</td></tr>
+                    <tr><td>Speed</td><td>{{ fmt2(gpsSpeed) }} m/s</td></tr>
+                    <tr><td>Time</td><td class="dim">{{ gpsTime }}</td></tr>
+                </table>
+            </div></div>
+        </div>
+
+        <div class="col s12 m6">
+            <div class="card"><div class="card-content">
+                <span class="card-title">Geomag / IMU</span>
+                <table class="reading-table">
+                    <tr><td>Declination</td><td>{{ fmtDeg(declDeg) }}</td><td class="dim">true − mag</td></tr>
+                    <tr><td>Inclination</td><td>{{ fmtDeg(inclDeg) }}</td><td class="dim">dip below horiz</td></tr>
+                    <tr><td>F (total)</td><td>{{ fmt2(fUt) }} µT</td><td></td></tr>
+                    <tr><td>H (horizontal)</td><td>{{ fmt2(hUt) }} µT</td><td></td></tr>
+                    <tr><td>X (north)</td><td>{{ fmt2(xUt) }} µT</td><td></td></tr>
+                    <tr><td>Y (east)</td><td>{{ fmt2(yUt) }} µT</td><td></td></tr>
+                    <tr><td>Z (down)</td><td>{{ fmt2(zUt) }} µT</td><td></td></tr>
+                    <tr><td>Accel (m/s²)</td><td colspan="2">{{ fmtVec3(accel) }}</td></tr>
+                    <tr><td>Gyro (rad/s)</td><td colspan="2">{{ fmtVec3(gyro) }}</td></tr>
+                    <tr><td>Temp</td><td colspan="2">{{ fmt2(tempC) }} °C</td></tr>
+                </table>
+            </div></div>
+        </div>
+    </div>
+</main>
+
+<script src="js/vue.min.js"></script>
+<script src="js/materialize.min.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

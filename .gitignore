@@ -2,5 +2,6 @@
 /cmd/sim/sim
 /cmd/websim/websim
 /cmd/replay/replay
+/cmd/compass/compass
 go.work
 go.work.sum
