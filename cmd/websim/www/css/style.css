@@ -167,6 +167,7 @@ main {
 .trp { font-family: monospace; margin-top: 8px; }
 .rejected { font-family: monospace; margin-top: 4px; color: #777; }
 .rejected-warn { color: #d84315; font-weight: bold; }
+.best-saved-at { color: #777; font-size: 0.9em; font-style: italic; margin-right: 6px; }
 
 /* Tighten Materialize row spacing slightly */
 .row { margin-bottom: 12px; }

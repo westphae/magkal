@@ -18,15 +18,15 @@ vm = new Vue({
         // Truth: array form so v-for can drive the inputs.
         kAct: [1.0, 1.0, 1.0],
         lAct: [0.0, 0.0, 0.0],
-        // "Current best estimate" for the Actual source. Updated only on
-        // explicit user actions — Finish (captures the INIT seed values)
-        // or Reset (back to (1, 0)). Persisted in localStorage so it
-        // survives Restart and page reload. Drives the dark-ellipse
-        // reference, the Actx/Acty markers on the plots, and the Δk/Δl
-        // column in the state table; Δ then meaningfully shows how the
-        // live filter diverges from the captured baseline.
+        // Server-persisted "known best" calibration for the Actual source.
+        // Loaded from ~/.magkal/best.json on connect; updated only on
+        // explicit Save Best clicks. Drives the dark-ellipse reference,
+        // the Actx/Acty markers on the plots, and the Δk/Δl column in
+        // the state table; Δ then meaningfully shows how the live filter
+        // diverges from the saved baseline.
         bestK: [1.0, 1.0, 1.0],
         bestL: [0.0, 0.0, 0.0],
+        bestSavedAt: '',
         // Filter tuning.
         sigmaK0: 0.25,
         sigmaK: 0.01,
@@ -89,7 +89,6 @@ vm = new Vue({
 
     created: function() {
         self = this;
-        this.loadBest();
         this.ws = new WebSocket('ws://' + window.location.host + '/websocket');
         this.ws.addEventListener('open',  () => self.connected = true);
         this.ws.addEventListener('close', () => self.connected = false);
@@ -220,12 +219,11 @@ vm = new Vue({
                 lockHysteresis: this.lockHysteresis,
                 nisWindow:      this.nisWindow,
                 nisThreshold:   this.nisThreshold,
-                recordFile:     this.recordFile || '',
-                // Seed the rebuilt filter from the persisted best estimate.
-                // Server applies this only when source == actual; in other
-                // modes the (k=1, l=0) cold-start is still the right thing.
-                seedK:          this.bestK.slice(0, 3),
-                seedL:          this.bestL.slice(0, 3)
+                recordFile:     this.recordFile || ''
+                // Server-side Restart-time seeding now consults
+                // ~/.magkal/best.json directly (via SeedKLWithP, so the
+                // saved covariance is restored too). The client no
+                // longer ships seedK/seedL.
             };
             this.ws.send(JSON.stringify({"params": params}));
         },
@@ -259,23 +257,13 @@ vm = new Vue({
         forceLock:   function () { this.ws.send(JSON.stringify({"setMode": "LCK"})); },
         forceUnlock: function () { this.ws.send(JSON.stringify({"setMode": "CAL"})); },
 
-        // --- "Current best" (Actual source) ----------------------------
-        // localStorage round-trip for the persisted best estimate. Bad
-        // entries (NaN, wrong shape) are silently dropped so a stale
-        // value can't crash startup.
-        loadBest: function () {
-            try {
-                var k = JSON.parse(localStorage.getItem('magkal.bestK'));
-                var l = JSON.parse(localStorage.getItem('magkal.bestL'));
-                if (Array.isArray(k) && k.length === 3 && k.every(Number.isFinite)) this.bestK = k;
-                if (Array.isArray(l) && l.length === 3 && l.every(Number.isFinite)) this.bestL = l;
-            } catch (e) { /* ignore — fall back to defaults */ }
-        },
-        saveBest: function () {
-            try {
-                localStorage.setItem('magkal.bestK', JSON.stringify(this.bestK));
-                localStorage.setItem('magkal.bestL', JSON.stringify(this.bestL));
-            } catch (e) { /* ignore — localStorage may be disabled */ }
+        // --- Server-persisted "known best" calibration -----------------
+        // The save is deliberate: clicking Save Best sends the current
+        // filter (k, l, P) to the server, which writes ~/.magkal/best.json.
+        // The server then echoes the new snapshot back so bestK/bestL
+        // refresh without needing a separate load.
+        saveBestServer: function () {
+            this.ws.send(JSON.stringify({"saveBest": true}));
         },
         // Push bestK/bestL into the kAct/lAct arrays (drives the kErr/lErr
         // computeds and the editable-input v-model) and into this.data
@@ -291,16 +279,10 @@ vm = new Vue({
             }
         },
         resetBest: function () {
-            this.bestK = [1, 1, 1];
-            this.bestL = [0, 0, 0];
-            this.saveBest();
-            if (parseInt(this.source) === 3) {
-                this.applyBestToData();
-                // Force the plots to redraw with the new reference so the
-                // dark ellipse / centre dot snap back to (1, 0) without
-                // waiting for the next state push.
-                dispatch.call("estimate", this, this.data);
-            }
+            // Server-side reset: clears ~/.magkal/best.json. The reply
+            // (empty Best snapshot) drives the local state back to
+            // (1, 0); plots refresh via the existing estimate dispatch.
+            this.ws.send(JSON.stringify({"resetBest": true}));
         },
 
         // Guided-calibration controls. The whole calibration boils down
@@ -323,25 +305,10 @@ vm = new Vue({
             this.ws.send(JSON.stringify({"startInit": true}));
         },
         finishInit:  function () {
-            // Capture the (k, l) seed client-side from the visible stats
-            // and write it to bestK/bestL before the server's response
-            // round-trips back. The server runs the same arithmetic and
-            // SeedKL's the filter; we just don't want the dark-ellipse
-            // to lag the filter by one message.
-            if (this.initStats && this.initStats.count > 0) {
-                var k = this.bestK.slice();
-                var l = this.bestL.slice();
-                for (var i = 0; i < this.n; i++) {
-                    var seedL = this.initSeedL(i);
-                    var seedK = this.initSeedK(i);
-                    if (seedL != null) l[i] = seedL;
-                    if (seedK != null) k[i] = seedK;
-                }
-                this.bestK = k;
-                this.bestL = l;
-                this.saveBest();
-                this.applyBestToData();
-            }
+            // Server seeds the filter from the INIT samples (principled
+            // P + replay). The Best Estimate is NOT auto-updated here —
+            // user must click Save Best to promote the new calibration
+            // once they've watched it converge.
             this.ws.send(JSON.stringify({"finishInit": true}));
         },
 
@@ -467,6 +434,28 @@ vm = new Vue({
             if (msg.hasOwnProperty('converged') && msg.converged !== null) this.converged = msg.converged;
             if (msg.hasOwnProperty('playback')  && msg.playback !== null)  this.playback = msg.playback;
             if (msg.hasOwnProperty('rejected')  && msg.rejected  !== null) this.rejected = msg.rejected;
+            if (msg.best) {
+                // Server-side persisted best (k, l). Empty K/L (or N==0)
+                // means "no saved best yet" — fall back to identity.
+                var sn = msg.best;
+                var hasBest = sn.n > 0 && Array.isArray(sn.k) && sn.k.length === sn.n
+                              && Array.isArray(sn.l) && sn.l.length === sn.n;
+                if (hasBest) {
+                    this.bestK = sn.k.slice(0, 3).concat([1,1,1]).slice(0, 3);
+                    this.bestL = sn.l.slice(0, 3).concat([0,0,0]).slice(0, 3);
+                    this.bestSavedAt = sn.savedAt || '';
+                } else {
+                    this.bestK = [1, 1, 1];
+                    this.bestL = [0, 0, 0];
+                    this.bestSavedAt = '';
+                }
+                if (parseInt(this.source) === 3) {
+                    this.applyBestToData();
+                    // Refresh plot references so the dark ellipse / centre
+                    // dot snap to the new (or reset) values immediately.
+                    dispatch.call("estimate", this, this.data);
+                }
+            }
             if (msg.initStats) this.initStats = msg.initStats;
             // Once the server transitions out of INIT (Finish or Restart),
             // drop the stale stats so the panel collapses cleanly.

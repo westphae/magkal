@@ -175,17 +175,22 @@
                 </div>
             </div>
 
-            <!-- Current-best reference (Actual source). The dark ellipse,
-                 reference dots, and Δk/Δl column all track this value.
-                 Auto-updates on every state change; preserved across
-                 Restart and reload; user can Reset back to (1, 0). -->
+            <!-- Server-persisted "known best" calibration (Actual source).
+                 Updated only on Save Best — the current EKF state is NOT
+                 auto-promoted by Finish Cal or Force Lock. The dark
+                 ellipse, reference dots, and Δk/Δl column all track
+                 this value; Reset clears the server file. -->
             <div class="row best-est" v-if="source == 3">
                 <div class="col s12">
                     <p>
                         <b>Best estimate:</b>
                         k=[{{ formatVec(bestK, 3) }}]
                         · l=[{{ formatVec(bestL, 1) }}]
-                        <button class="btn btn-small" @click="resetBest()">Reset</button>
+                        <span v-if="bestSavedAt" class="best-saved-at">
+                            (saved {{ bestSavedAt.substring(0, 19).replace('T', ' ') }})
+                        </span>
+                        <button class="btn btn-small" @click="saveBestServer()">Save Best</button>
+                        <button class="btn btn-small btn-flat" @click="resetBest()">Reset</button>
                     </p>
                 </div>
             </div>
