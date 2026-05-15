@@ -64,6 +64,16 @@ func main() {
 	initTUI(addr)
 	defer stopTUI()
 
+	// Restore user's last-edited n0 (e.g. local field strength of 46.4 µT
+	// vs the 50.0 µT global average). Read once at boot; saveConfig
+	// re-writes whenever the live params change.
+	if cfg, err := loadConfig(); err != nil {
+		ui.Logf("loadConfig: %v", err)
+	} else if cfg != nil && cfg.N0 > 0 {
+		defaultParams.N0 = cfg.N0
+		ui.Logf("restored n0 = %g from config.json", cfg.N0)
+	}
+
 	// Probe for a physical MPU at startup; if present, default the source
 	// to "actual" so a freshly-opened page on a real flight setup goes
 	// straight to live measurements instead of needing the user to flip
@@ -131,6 +141,18 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	ui.IncConnections(+1)
 	defer ui.IncConnections(-1)
 
+	// Pull the latest persisted n0 from disk before initializing this
+	// connection. defaultParams was loaded at boot but isn't kept in
+	// sync with config.json across the session — applyParams writes
+	// when (disk != incoming), so an out-of-date defaultParams would
+	// cause a fresh connection to write its stale value back and
+	// silently overwrite the user's edit. (Single-user assumption: no
+	// mutex needed; concurrent writers would write the same disk value
+	// here anyway.)
+	if cfg, err := loadConfig(); err == nil && cfg != nil && cfg.N0 > 0 {
+		defaultParams.N0 = cfg.N0
+	}
+
 	// Single writer goroutine, fed by outCh. Multiple producers (read loop,
 	// playback ticks, seek completions) are safe because conn.WriteJSON
 	// is not goroutine-safe but the channel serializes us to one writer.
@@ -163,6 +185,7 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		NIS:       &nis,
 		Converged: &converged,
 		Rejected:  &rej,
+		Best:      loadedBestSnapshot(),
 	}
 	ui.PushFilterState(c.params.Source, c.estimator, mode, c.params, nil, 0, 0)
 
@@ -350,6 +373,39 @@ func handleMessage(c *connectionState, msg messageIn, ticker *time.Ticker) *time
 	if msg.PlaybackCmd != nil && c.pb != nil {
 		ticker = applyPlaybackCmd(c, *msg.PlaybackCmd, ticker)
 	}
+	if msg.SaveBest != nil && *msg.SaveBest {
+		// Snapshot the current Actual-side filter state and persist it as
+		// the known-best calibration. Restricted to the manual/random/
+		// actual estimator — scenario playback has its own filter and
+		// shouldn't write the user's saved-best file.
+		if c.pb != nil {
+			ui.Logf("SaveBest ignored in scenario mode")
+		} else {
+			b := &bestFile{
+				N:       c.params.N,
+				K:       c.estimator.K(),
+				L:       c.estimator.L(),
+				P:       c.estimator.P(),
+				SavedAt: time.Now(),
+			}
+			if err := saveBestFile(b); err != nil {
+				ui.Logf("saveBest: %v", err)
+			} else {
+				ui.Logf("best saved: k=%s l=%s (n=%d)", fmtVec(b.K), fmtVec(b.L), b.N)
+				c.outCh <- messageOut{Best: bestSnapshotFrom(b)}
+			}
+		}
+	}
+	if msg.ResetBest != nil && *msg.ResetBest {
+		if err := deleteBestFile(); err != nil {
+			ui.Logf("resetBest: %v", err)
+		} else {
+			ui.Logf("best reset")
+			// Empty snapshot signals "no saved best"; client will fall
+			// back to (1, 0) for the dark-ellipse reference.
+			c.outCh <- messageOut{Best: &bestSnapshot{N: c.params.N}}
+		}
+	}
 	if msg.SetMode != nil {
 		// Route the manual override to whichever filter is live for the
 		// current source: the playback's filter in Scenario mode, the
@@ -420,15 +476,25 @@ func applyParams(c *connectionState, p params) {
 	if p.StateMachineOn && p.LockHysteresis > 0 && p.NISWindow > 0 && p.NISThreshold > 0 {
 		c.estimator.EnableStateMachine(p.LockHysteresis, p.NISWindow, p.NISThreshold)
 	}
-	// Actual source: seed the freshly-built filter from the client's
-	// persisted best estimate so Restart resumes from the last known
-	// calibration instead of (k=1, l=0). The seed defaults to (1, 0) on
-	// the client side, so first-time users still get the cold-start
-	// behavior; only matters after the user has run INIT (or edited the
-	// best-estimate values directly).
-	if p.Source == actual && p.SeedK != nil && p.SeedL != nil &&
-		len(*p.SeedK) >= p.N && len(*p.SeedL) >= p.N {
-		c.estimator.SeedKL((*p.SeedK)[:p.N], (*p.SeedL)[:p.N])
+	// Actual source: seed the freshly-built filter from the server-side
+	// saved "best" file when it exists and matches the configured n.
+	// We use SeedKLWithP so the saved covariance is restored too — the
+	// filter resumes exactly where the last Save Best left off.
+	if p.Source == actual {
+		if best, err := loadBest(); err == nil && best != nil &&
+			best.N == p.N &&
+			len(best.K) == p.N && len(best.L) == p.N &&
+			len(best.P) == 2*p.N {
+			c.estimator.SeedKLWithP(best.K, best.L, best.P)
+		}
+	}
+	// Persist n0 whenever it changes so the user's local field strength
+	// sticks across restarts. Cheap idempotent write; logged only on
+	// failure.
+	if cfg, _ := loadConfig(); cfg == nil || cfg.N0 != p.N0 {
+		if err := saveConfig(&configFile{N0: p.N0}); err != nil {
+			ui.Logf("persist n0: %v", err)
+		}
 	}
 }
 
@@ -688,6 +754,25 @@ func effectiveMode(c *connectionState) string {
 		return "INIT"
 	}
 	return c.estimator.Mode().String()
+}
+
+// loadedBestSnapshot returns the on-disk best (without P) for the
+// initial connect message, or nil if no file is present.
+func loadedBestSnapshot() *bestSnapshot {
+	b, err := loadBest()
+	if err != nil || b == nil {
+		return nil
+	}
+	return bestSnapshotFrom(b)
+}
+
+func bestSnapshotFrom(b *bestFile) *bestSnapshot {
+	return &bestSnapshot{
+		N:       b.N,
+		K:       append([]float64(nil), b.K...),
+		L:       append([]float64(nil), b.L...),
+		SavedAt: b.SavedAt,
+	}
 }
 
 // fmtVec renders a small float vector compactly for messages-pane log lines.

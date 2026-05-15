@@ -1,5 +1,7 @@
 package main
 
+import "time"
+
 // Wire protocol for the websim websocket. Each messageIn/messageOut may
 // contain any subset of the optional fields below; recipients ignore the
 // fields they don't recognize.
@@ -41,13 +43,6 @@ type params struct {
 	// step. If the file already exists, a new step is appended (provided
 	// truth.n / truth.n0 still match); otherwise it's created fresh.
 	RecordFile string `json:"recordFile,omitempty"`
-
-	// Persisted "best estimate" calibration, applied as the freshly-built
-	// filter's starting state when Source == actual. Lets Restart resume
-	// from the last known calibration instead of (k=1, l=0). Ignored for
-	// other sources (where (1, 0) is the right cold-start).
-	SeedK *[]float64 `json:"seedK,omitempty"`
-	SeedL *[]float64 `json:"seedL,omitempty"`
 }
 
 // Some sensible default parameters to start the user off.
@@ -107,6 +102,12 @@ type messageIn struct {
 	// seed and applies it to the filter via SeedKL before resuming CAL.
 	StartInit  *bool `json:"startInit"`
 	FinishInit *bool `json:"finishInit"`
+	// SaveBest snapshots the current filter state (k, l, P) and persists
+	// it as the server-side "known best" model. ResetBest deletes that
+	// file. Both are explicit user actions — the auto-save on Finish/
+	// Force Lock was removed in favour of these.
+	SaveBest  *bool `json:"saveBest"`
+	ResetBest *bool `json:"resetBest"`
 }
 
 // initStats reports the per-axis min/max/range and sample count gathered
@@ -152,4 +153,20 @@ type messageOut struct {
 	// >2× step change vs. last accepted). Surfaces in the UI so a glitch
 	// burst doesn't silently disappear.
 	Rejected *int `json:"rejected,omitempty"`
+	// Best is the server-side persisted "known best" snapshot, shipped
+	// on connect and after Save/Reset Best. Empty K/L slices (or N=0)
+	// signal "no saved best" — the client should fall back to (1, 0)
+	// for the dark-ellipse reference. P stays server-side; the client
+	// only needs (k, l) for display.
+	Best *bestSnapshot `json:"best,omitempty"`
+}
+
+// bestSnapshot is the client-visible view of the saved best estimate.
+// P is omitted from the wire since the client never displays it; the
+// server uses the on-disk P when seeding the filter on Restart.
+type bestSnapshot struct {
+	N       int       `json:"n"`
+	K       []float64 `json:"k"`
+	L       []float64 `json:"l"`
+	SavedAt time.Time `json:"savedAt"`
 }
