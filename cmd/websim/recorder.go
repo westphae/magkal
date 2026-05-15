@@ -141,13 +141,23 @@ func (r *recorder) loadOrInit(path string) (*scenario.Script, error) {
 		}
 		return s, nil
 	}
-	// Build a fresh scenario. k=[1,1,1], l=[0,0,0] are placeholders —
-	// recorded samples don't go through SynthMeasurement so these aren't
-	// used during replay, but the YAML schema requires them.
+	// Build a fresh scenario. Prefer the saved best-fit (k, l) as the
+	// "truth" header so a replay of this scenario starts from a
+	// meaningful reference rather than (1, 0). Recorded samples don't
+	// go through SynthMeasurement at replay time, so the values are
+	// informational — they're what shows up in the YAML and in any
+	// downstream tooling that reads the truth block. Fall back to
+	// (1, 0) placeholders when no best is saved yet or its shape
+	// doesn't match this recording's n.
 	k := make([]float64, r.n)
 	l := make([]float64, r.n)
 	for i := range k {
 		k[i] = 1
+	}
+	if best, err := loadBest(); err == nil && best != nil &&
+		best.N == r.n && len(best.K) == r.n && len(best.L) == r.n {
+		copy(k, best.K)
+		copy(l, best.L)
 	}
 	return &scenario.Script{
 		Truth: scenario.Truth{
