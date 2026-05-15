@@ -19,7 +19,7 @@ vm = new Vue({
         kAct: [1.0, 1.0, 1.0],
         lAct: [0.0, 0.0, 0.0],
         // Server-persisted "known best" calibration for the Actual source.
-        // Loaded from ~/.magkal/best.json on connect; updated only on
+        // Loaded from ~/.config/magkal/best_fit.json on connect; updated only on
         // explicit Save Best clicks. Drives the dark-ellipse reference,
         // the Actx/Acty markers on the plots, and the Δk/Δl column in
         // the state table; Δ then meaningfully shows how the live filter
@@ -174,7 +174,8 @@ vm = new Vue({
                 params.n0 !== this.n0 ||
                 params.sigmaK0 !== this.sigmaK0 ||
                 params.sigmaK !== this.sigmaK ||
-                params.sigmaM !== this.sigmaM) return true;
+                params.sigmaM !== this.sigmaM ||
+                (params.recordFile || '') !== (this.recordFile || '')) return true;
             for (var i = 0; i < 3; i++) {
                 if ((params.kAct[i] || 0) !== (this.kAct[i] || 0)) return true;
                 if ((params.lAct[i] || 0) !== (this.lAct[i] || 0)) return true;
@@ -224,7 +225,7 @@ vm = new Vue({
                 nisThreshold:   this.nisThreshold,
                 recordFile:     this.recordFile || ''
                 // Server-side Restart-time seeding now consults
-                // ~/.magkal/best.json directly (via SeedKLWithP, so the
+                // ~/.config/magkal/best_fit.json directly (via SeedKLWithP, so the
                 // saved covariance is restored too). The client no
                 // longer ships seedK/seedL.
             };
@@ -289,7 +290,7 @@ vm = new Vue({
             }
         },
         resetBest: function () {
-            // Server-side reset: clears ~/.magkal/best.json. The reply
+            // Server-side reset: clears ~/.config/magkal/best_fit.json. The reply
             // (empty Best snapshot) drives the local state back to
             // (1, 0); plots refresh via the existing estimate dispatch.
             this.ws.send(JSON.stringify({"resetBest": true}));
@@ -302,6 +303,12 @@ vm = new Vue({
         // Finish captures the seed into the persisted best estimate
         // before applying it to the filter.
         startInit:   function () {
+            // Apply any pending param edits (notably recordFile) before
+            // we ask the server to enter INIT. Without this, a freshly-
+            // typed filename only takes effect on the next explicit
+            // Restart, so the calibration-phase samples wouldn't be
+            // captured in the recording.
+            if (this.check_params_changed()) this.restart();
             this.initStats = null;
             this.ws.send(JSON.stringify({"startInit": true}));
             if (!this.measuring) this.measureMany();
