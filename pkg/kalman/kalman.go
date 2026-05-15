@@ -531,19 +531,45 @@ func copyMatrix(m Matrix) Matrix {
 // Synchronous; blocks until the runFilter goroutine applies the change.
 // Panics on length mismatch to surface caller bugs immediately.
 func (k *Filter) SeedKL(kSeed, lSeed []float64) {
+	pInit := make(Matrix, 2*k.n)
+	for i := 0; i < k.n; i++ {
+		pInit[2*i] = make([]float64, 2*k.n)
+		pInit[2*i+1] = make([]float64, 2*k.n)
+		pInit[2*i][2*i] = k.sigmaK0 * k.sigmaK0
+		pInit[2*i+1][2*i+1] = (k.n0 * k.sigmaK0) * (k.n0 * k.sigmaK0)
+	}
+	k.SeedKLWithP(kSeed, lSeed, pInit)
+}
+
+// SeedKLWithP is SeedKL with a caller-supplied initial covariance matrix.
+// Used by the cmd/websim INIT calibration path: after computing (k, l)
+// from buffered samples it also derives a principled P via linear-
+// regression analysis (EstimateCovariance) and passes it here so the
+// filter starts with covariance grounded in the calibration data rather
+// than the conservative default.
+//
+// pInit must be 2n × 2n. Panics on size mismatch.
+func (k *Filter) SeedKLWithP(kSeed, lSeed []float64, pInit Matrix) {
 	if len(kSeed) != k.n || len(lSeed) != k.n {
-		panic("kalman.SeedKL: length mismatch")
+		panic("kalman.SeedKLWithP: length mismatch on kSeed/lSeed")
+	}
+	if len(pInit) != 2*k.n {
+		panic("kalman.SeedKLWithP: pInit size mismatch")
+	}
+	for i := range pInit {
+		if len(pInit[i]) != 2*k.n {
+			panic("kalman.SeedKLWithP: pInit row size mismatch")
+		}
 	}
 	snap := k.Snapshot()
 	for i := 0; i < k.n; i++ {
 		snap.X[2*i][0] = kSeed[i]
 		snap.X[2*i+1][0] = lSeed[i]
+	}
+	for i := 0; i < 2*k.n; i++ {
 		for j := 0; j < 2*k.n; j++ {
-			snap.P[2*i][j] = 0
-			snap.P[2*i+1][j] = 0
+			snap.P[i][j] = pInit[i][j]
 		}
-		snap.P[2*i][2*i] = k.sigmaK0 * k.sigmaK0
-		snap.P[2*i+1][2*i+1] = (k.n0 * k.sigmaK0) * (k.n0 * k.sigmaK0)
 	}
 	// Reset state-machine bookkeeping so a freshly-seeded filter starts
 	// in CAL with a clean consecutive-converged counter and NIS window.
