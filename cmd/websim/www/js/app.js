@@ -72,12 +72,7 @@ vm = new Vue({
         // D3 / plot handles.  Holding them outside of `data` (Vue reactivity)
         // would be slightly cleaner, but the codebase already keeps them here.
         msmts: null,
-        mxs_update: null,
-        k1l1_update: null,
-        k2l2_update: null,
-        kk_update: null,
-        ll_update: null,
-        dTheta_update: null,
+        mxsPlots: [],   // one MagXSPlot per shown axis-pair (xy, xz, yz)
         data: {},
         _lastN: 0   // last n that drove a plot rebuild
     },
@@ -415,27 +410,46 @@ vm = new Vue({
         // analysis.js plots are created against a specific n. We only need
         // to tear them down and rebuild when n changes; previously the
         // whole graph was discarded on every params message.
+        //
+        // Layout: triptych of magnetic-field cross-sections (xy/xz/yz for
+        // n=3, just xy for n=2, none for n=1), then the manual input area
+        // below. Both for the calibration story this is meant to tell;
+        // the old k/l vs k/l plots and dTheta plot have been removed.
         rebuildPlots: function () {
-            d3.select('#m-plot').selectAll('svg').remove();
-            this.mxs_update = new MagXSPlot(1, 2, "#m-plot");
-            dispatch.on("estimate.mxs",    this.mxs_update.update_state);
-            dispatch.on("measurement.mxs", this.mxs_update.update_measurement);
-            this.msmts = new MagInputArea('#m-plot', this.n, (d) => {
+            var root = d3.select('#m-plot');
+            root.selectAll('*').remove();
+
+            // Drop any prior mxs* listeners; a transition to a smaller n
+            // would otherwise leave dispatch entries pointing at the
+            // torn-down plots from the previous build.
+            for (var i = 0; i < 3; i++) {
+                dispatch.on('estimate.mxs' + i,    null);
+                dispatch.on('measurement.mxs' + i, null);
+            }
+
+            this.mxsPlots = [];
+            var pairs = [];
+            if (this.n === 2) pairs = [[1, 2]];
+            else if (this.n >= 3) pairs = [[1, 2], [1, 3], [2, 3]];
+
+            if (pairs.length > 0) {
+                root.append('div').attr('id', 'triptych');
+                pairs.forEach((p, idx) => {
+                    var plot = new MagXSPlot(p[0], p[1], '#triptych');
+                    this.mxsPlots.push(plot);
+                    // Each plot needs its own dispatch namespace so all
+                    // three instances receive every estimate/measurement.
+                    dispatch.on('estimate.mxs' + idx,    plot.update_state);
+                    dispatch.on('measurement.mxs' + idx, plot.update_measurement);
+                });
+            }
+
+            root.append('div').attr('id', 'input-area');
+            this.msmts = new MagInputArea('#input-area', this.n, (d) => {
                 dispatch.call("measure_request", self, {"a": d});
             });
             dispatch.on("measurement.msmts", this.msmts.update_measurement);
-            this.k1l1_update = new KLPlot("L1", "K1", "#m-plot");
-            dispatch.on("estimate.k1l1", this.k1l1_update.update_state);
-            if (this.n > 1) {
-                this.k2l2_update = new KLPlot("L2", "K2", "#m-plot");
-                dispatch.on("estimate.k2l2", this.k2l2_update.update_state);
-                this.kk_update = new KLPlot("K1", "K2", "#m-plot");
-                dispatch.on("estimate.kk", this.kk_update.update_state);
-                this.ll_update = new KLPlot("L1", "L2", "#m-plot");
-                dispatch.on("estimate.ll", this.ll_update.update_state);
-                this.dTheta_update = new DThetaPlot("#m-plot");
-                dispatch.on("estimate.dTheta", this.dTheta_update.update_state);
-            }
+
             this._lastN = this.n;
         },
 
@@ -494,8 +508,10 @@ vm = new Vue({
                 } else {
                     // Same n -> keep DOM but reset per-plot history so
                     // Restart visibly wipes the prior measurement trail.
-                    if (this.mxs_update  && this.mxs_update.clear_history)  this.mxs_update.clear_history();
-                    if (this.msmts       && this.msmts.clear_history)       this.msmts.clear_history();
+                    this.mxsPlots.forEach(p => {
+                        if (p && p.clear_history) p.clear_history();
+                    });
+                    if (this.msmts && this.msmts.clear_history) this.msmts.clear_history();
                 }
                 this.refreshMaterialize();
             }
