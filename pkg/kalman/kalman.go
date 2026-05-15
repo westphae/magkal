@@ -40,6 +40,7 @@ type forceCmd int
 const (
 	forceCmdLock forceCmd = iota + 1
 	forceCmdUnlock
+	forceCmdResetSM
 )
 
 // Snapshot is a serializable copy of the filter's full internal state.
@@ -260,8 +261,35 @@ func (k *Filter) runFilter() {
 			case forceCmdLock:
 				k.mode = ModeLocked
 				k.consecutiveConverged = 0
+				// Mirror the natural CAL→LCK transition's NIS buffer
+				// reset so the LCK→CAL auto-unlock check needs fresh
+				// post-lock samples before it can fire. Without this,
+				// pre-lock NIS residuals (the new in-CAL accumulation
+				// behaviour) carry over and can trigger a surprise
+				// auto-unlock moments after the user clicked Force Lock.
+				for i := range k.nisBuf {
+					k.nisBuf[i] = 0
+				}
+				k.nisIdx = 0
+				k.nisCount = 0
+				k.nisSum = 0
 			case forceCmdUnlock:
 				k.unlockAndInflate()
+			case forceCmdResetSM:
+				// Reset just the state-machine bookkeeping (mode, the
+				// consecutive-converged counter, the NIS buffer). State
+				// x and covariance P are preserved. Used after a bulk
+				// feed (e.g. cmd/websim's INIT replay) so that subsequent
+				// live measurements drive a fresh CAL phase instead of
+				// inheriting the bulk feed's lock progress.
+				k.mode = ModeCalibrating
+				k.consecutiveConverged = 0
+				for i := range k.nisBuf {
+					k.nisBuf[i] = 0
+				}
+				k.nisIdx = 0
+				k.nisCount = 0
+				k.nisSum = 0
 			}
 			select {
 			case k.Done <- struct{}{}:
@@ -465,14 +493,32 @@ func (k *Filter) ForceUnlock() {
 // ForceLock transitions to ModeLocked immediately, bypassing the
 // Converged()/lockHysteresis check. Use cautiously — locking before
 // the calibration is actually good will freeze it at a bad value. P
-// is left as-is (unlike unlock, which re-inflates). Works independent
-// of whether the auto state machine is enabled. Synchronous.
+// is left as-is (unlike unlock, which re-inflates). The NIS buffer is
+// cleared so the LCK→CAL auto-unlock check needs fresh post-lock
+// samples before it can fire (otherwise pre-lock CAL-era NIS residuals
+// could trigger an immediate auto-unlock). Works independent of whether
+// the auto state machine is enabled. Synchronous.
 func (k *Filter) ForceLock() {
 	select {
 	case <-k.Done:
 	default:
 	}
 	k.force <- forceCmdLock
+	<-k.Done
+}
+
+// ResetStateMachine clears the CAL→LCK transition bookkeeping (mode set
+// to CAL, consecutive-converged counter zeroed, NIS rolling buffer
+// cleared) without touching state x or covariance P. Used by callers
+// that bulk-feed the filter (e.g. cmd/websim's post-INIT replay) and
+// want subsequent live measurements to drive a fresh CAL phase instead
+// of inheriting the bulk feed's lock progress. Synchronous.
+func (k *Filter) ResetStateMachine() {
+	select {
+	case <-k.Done:
+	default:
+	}
+	k.force <- forceCmdResetSM
 	<-k.Done
 }
 
