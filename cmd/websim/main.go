@@ -274,8 +274,38 @@ func handleMessage(c *connectionState, msg messageIn, ticker *time.Ticker) *time
 			pushManualState(c)
 		} else {
 			kSeed, lSeed := c.initBuf.seed(c.params.N0)
-			ui.Logf("INIT seed: k=%s l=%s (from %d samples)", fmtVec(kSeed), fmtVec(lSeed), c.initBuf.count)
-			c.estimator.SeedKL(kSeed, lSeed)
+			// Principled P: σ²·(HᵀH)⁻¹ over the buffered samples at the
+			// seed. Falls back to the default diagonal sigmaK0 when too
+			// few samples were captured or HᵀH is singular (e.g. user
+			// rotated about only one axis).
+			if pInit, ok := kalman.EstimateCovariance(c.initBuf.samples, kSeed, lSeed, c.params.N0, c.params.SigmaM); ok {
+				c.estimator.SeedKLWithP(kSeed, lSeed, pInit)
+				ui.Logf("INIT seed: k=%s l=%s (P principled, %d samples)", fmtVec(kSeed), fmtVec(lSeed), c.initBuf.count)
+			} else {
+				c.estimator.SeedKL(kSeed, lSeed)
+				ui.Logf("INIT seed: k=%s l=%s (P default, %d samples)", fmtVec(kSeed), fmtVec(lSeed), c.initBuf.count)
+			}
+			// Replay buffered samples in random order so the EKF takes
+			// actual update steps against the calibration data, not just
+			// the analytic seed. Bounded to keep the post-click pause
+			// short on long INITs.
+			const replayCap = 500
+			rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+			replay := c.initBuf.shuffledCopy(rng, replayCap)
+			if len(replay) > 0 {
+				n0sq := c.params.N0 * c.params.N0
+				for _, m := range replay {
+					select {
+					case <-c.estimator.Done:
+					default:
+					}
+					c.estimator.U <- kalman.Matrix{m}
+					c.estimator.Z <- n0sq
+					<-c.estimator.Done
+					c.steps++
+				}
+				ui.Logf("INIT replayed %d samples through EKF", len(replay))
+			}
 			c.initBuf = nil
 			pushManualState(c)
 		}
