@@ -584,6 +584,84 @@ func (k *Filter) SeedKLWithP(kSeed, lSeed []float64, pInit Matrix) {
 	k.Restore(snap)
 }
 
+// EstimateCovariance fits a linear-regression covariance matrix for the
+// state (k_1, l_1, k_2, l_2, …) using the buffered raw measurements
+// `samples` and the current point estimate (kSeed, lSeed). The math:
+//
+//	For each sample m_j and the seed (k, l):
+//	  n̂[i] = k_i * (m_j[i] - l_i)
+//	  z_pred = Σ n̂[i]²
+//	  r_j = z_pred - n0²                  (residual)
+//	  H[j][2i]   = 2 * n̂[i]² / k_i         (∂z/∂k_i)
+//	  H[j][2i+1] = -2 * n̂[i] * k_i         (∂z/∂l_i)
+//
+//	σ² = max(Σ r_j² / (N − p), floor)     (p = 2n parameters)
+//	P  = σ² * (HᵀH)⁻¹
+//
+// floor is the EKF's expected per-sample measurement variance
+// (2·n0²·sigmaM)², so the principled P never goes below what the chip's
+// noise alone would justify.
+//
+// Returns (P, true) on success or (nil, false) if N ≤ p (under-
+// determined) or HᵀH is singular (e.g. the user rotated about only one
+// axis). Callers should fall back to a conservative default in the
+// failure case.
+func EstimateCovariance(samples [][]float64, kSeed, lSeed []float64, n0, sigmaM float64) (Matrix, bool) {
+	n := len(kSeed)
+	if n == 0 || len(lSeed) != n {
+		return nil, false
+	}
+	p := 2 * n
+	N := len(samples)
+	if N <= p {
+		return nil, false
+	}
+
+	HtH := make(Matrix, p)
+	for i := range HtH {
+		HtH[i] = make([]float64, p)
+	}
+	var sumR2 float64
+	hRow := make([]float64, p)
+	for _, m := range samples {
+		if len(m) != n {
+			continue
+		}
+		r := -n0 * n0
+		for i := 0; i < n; i++ {
+			ni := kSeed[i] * (m[i] - lSeed[i])
+			r += ni * ni
+			hRow[2*i] = 2 * ni * ni / kSeed[i]
+			hRow[2*i+1] = -2 * ni * kSeed[i]
+		}
+		sumR2 += r * r
+		for i := 0; i < p; i++ {
+			for j := 0; j < p; j++ {
+				HtH[i][j] += hRow[i] * hRow[j]
+			}
+		}
+	}
+
+	inv := matInverse(HtH)
+	if inv == nil {
+		return nil, false
+	}
+
+	sigma2 := sumR2 / float64(N-p)
+	floor := (2 * n0 * n0 * sigmaM) * (2 * n0 * n0 * sigmaM)
+	if sigma2 < floor {
+		sigma2 = floor
+	}
+	out := make(Matrix, p)
+	for i := 0; i < p; i++ {
+		out[i] = make([]float64, p)
+		for j := 0; j < p; j++ {
+			out[i][j] = sigma2 * inv[i][j]
+		}
+	}
+	return out, true
+}
+
 // unlockAndInflate transitions LCK→CAL: resets the NIS window, resets
 // the consecutive-converged counter, and re-inflates P to its initial
 // diagonal values. State x is preserved (the prior calibration remains
