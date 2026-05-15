@@ -315,10 +315,10 @@ vm = new Vue({
             this.ws.send(JSON.stringify({"startInit": true}));
         },
         finishInit:  function () {
-            // Server seeds the filter from the INIT samples (principled
-            // P + replay). The Best Estimate is NOT auto-updated here —
-            // user must click Save Best to promote the new calibration
-            // once they've watched it converge.
+            // Server seeds the filter from the INIT samples with a
+            // principled P (σ²·(HᵀH)⁻¹). The Best Estimate is NOT
+            // auto-updated here — user must click Save Best to promote
+            // the new calibration once they've watched it converge.
             this.ws.send(JSON.stringify({"finishInit": true}));
         },
 

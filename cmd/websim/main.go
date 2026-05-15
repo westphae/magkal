@@ -341,6 +341,12 @@ func handleMessage(c *connectionState, msg messageIn, ticker *time.Ticker) *time
 	}
 	if msg.StartInit != nil && *msg.StartInit {
 		c.initBuf = newInitBuffer(c.params.N)
+		// Label the in-flight recording's current segment as the
+		// guided-calibration phase so the saved YAML clearly separates
+		// hand-rotation samples from the post-Finish live stream.
+		if c.recorder != nil {
+			c.recorder.setLabel("init_" + time.Now().Format("2006-01-02T15-04-05"))
+		}
 		stats := c.initBuf.stats()
 		mode := effectiveMode(c)
 		c.outCh <- messageOut{Mode: &mode, InitStats: &stats}
@@ -357,7 +363,11 @@ func handleMessage(c *connectionState, msg messageIn, ticker *time.Ticker) *time
 			// Principled P: σ²·(HᵀH)⁻¹ over the buffered samples at the
 			// seed. Falls back to the default diagonal sigmaK0 when too
 			// few samples were captured or HᵀH is singular (e.g. user
-			// rotated about only one axis).
+			// rotated about only one axis). No EKF replay — the
+			// principled P is already the right covariance, and a replay
+			// over the same samples just over-tightens it to where live
+			// updates produce no visible motion and Converged() flickers
+			// just above the lock threshold instead of cleanly crossing.
 			if pInit, ok := kalman.EstimateCovariance(c.initBuf.samples, kSeed, lSeed, c.params.N0, c.params.SigmaM); ok {
 				c.estimator.SeedKLWithP(kSeed, lSeed, pInit)
 				ui.Logf("INIT seed: k=%s l=%s (P principled, %d samples)", fmtVec(kSeed), fmtVec(lSeed), c.initBuf.count)
@@ -368,26 +378,13 @@ func handleMessage(c *connectionState, msg messageIn, ticker *time.Ticker) *time
 			// The seed changed (k, l); previous n_est is no longer a
 			// meaningful step-change reference.
 			c.outlier.resetBaseline()
-			// Replay buffered samples in random order so the EKF takes
-			// actual update steps against the calibration data, not just
-			// the analytic seed. Bounded to keep the post-click pause
-			// short on long INITs.
-			const replayCap = 500
-			rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-			replay := c.initBuf.shuffledCopy(rng, replayCap)
-			if len(replay) > 0 {
-				n0sq := c.params.N0 * c.params.N0
-				for _, m := range replay {
-					select {
-					case <-c.estimator.Done:
-					default:
-					}
-					c.estimator.U <- kalman.Matrix{m}
-					c.estimator.Z <- n0sq
-					<-c.estimator.Done
-					c.steps++
-				}
-				ui.Logf("INIT replayed %d samples through EKF", len(replay))
+			// Hand the recorder off to the live phase: flush the INIT
+			// samples accumulated so far as a labelled segment and
+			// switch the label for the post-Finish stream so the
+			// scenario YAML has distinguishable init/live segments.
+			if c.recorder != nil {
+				c.recorder.flush()
+				c.recorder.setLabel("live_" + time.Now().Format("2006-01-02T15-04-05"))
 			}
 			c.initBuf = nil
 			pushManualState(c)
