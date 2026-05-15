@@ -55,6 +55,7 @@ type statusSnapshot struct {
 	converged  bool
 	lastM      []float64
 	steps      int
+	rejected   int
 }
 
 type tuiMessage struct {
@@ -154,7 +155,7 @@ func (t *tui) render() {
 			}
 			b.WriteString("\n")
 		}
-		fmt.Fprintf(&b, " steps  : %d\n", s.steps)
+		fmt.Fprintf(&b, " steps  : %-8d rejected: %d\n", s.steps, s.rejected)
 	}
 
 	b.WriteString("\n-- messages -------------------------------------------------\n")
@@ -205,8 +206,9 @@ func (t *tui) IncConnections(d int) {
 
 // PushFilterState captures the current filter state into the status
 // snapshot. lastM may be nil; steps is the count of EKF Z-updates this
-// connection has driven so far.
-func (t *tui) PushFilterState(src source, kf *kalman.Filter, modeOverride string, p params, lastM []float64, steps int) {
+// connection has driven so far; rejected is the running count of
+// outlier-filter drops on this connection.
+func (t *tui) PushFilterState(src source, kf *kalman.Filter, modeOverride string, p params, lastM []float64, steps, rejected int) {
 	if t == nil {
 		return
 	}
@@ -245,6 +247,7 @@ func (t *tui) PushFilterState(src source, kf *kalman.Filter, modeOverride string
 		t.status.lastM = append(t.status.lastM[:0], lastM...)
 	}
 	t.status.steps = steps
+	t.status.rejected = rejected
 	t.mu.Unlock()
 }
 

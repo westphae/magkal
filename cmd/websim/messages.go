@@ -137,4 +137,9 @@ type messageOut struct {
 	Converged   *bool           `json:"converged"`
 	Playback    *playbackStatus `json:"playback"`
 	InitStats   *initStats      `json:"initStats,omitempty"`
+	// Rejected is the running count of measurements the outlier filter
+	// dropped before they reached the EKF (NaN/Inf, n_est > 10·n0, or
+	// >2× step change vs. last accepted). Surfaces in the UI so a glitch
+	// burst doesn't silently disappear.
+	Rejected *int `json:"rejected,omitempty"`
 }

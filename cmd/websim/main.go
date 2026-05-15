@@ -113,6 +113,7 @@ type connectionState struct {
 	recorder      *recorder     // non-nil only when params.Source == actual && params.RecordFile != ""
 	initBuf       *initBuffer   // non-nil while the user is in guided INIT mode
 	steps         int           // EKF Z-updates this session (manual/random/actual paths)
+	outlier       outlierFilter // drops gross/glitched measurements before they reach the EKF or UI
 }
 
 func handleConnections(w http.ResponseWriter, r *http.Request) {
@@ -153,6 +154,7 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	mode := c.estimator.Mode().String()
 	nis := c.estimator.NIS()
 	converged := c.estimator.Converged()
+	rej := 0
 	c.outCh <- messageOut{
 		Params:    &c.params,
 		State:     &initState,
@@ -160,8 +162,9 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		Mode:      &mode,
 		NIS:       &nis,
 		Converged: &converged,
+		Rejected:  &rej,
 	}
-	ui.PushFilterState(c.params.Source, c.estimator, mode, c.params, nil, 0)
+	ui.PushFilterState(c.params.Source, c.estimator, mode, c.params, nil, 0, 0)
 
 	// Ping-pong goroutine (unchanged in spirit; tolerant of conn closure).
 	startPinger(conn)
@@ -226,11 +229,22 @@ func handleMessage(c *connectionState, msg messageIn, ticker *time.Ticker) *time
 		}
 	}
 	if msg.Measure != nil && c.measurer != nil {
-		c.measurement = c.measurer(msg.Measure.A)
-		if c.recorder != nil {
-			c.recorder.append(c.measurement)
+		m := c.measurer(msg.Measure.A)
+		// Drop gross outliers (NaN/Inf, n_est > 10·n0 absolute, or a
+		// single-sample step change > 2× the previous accepted value)
+		// before they corrupt the recorder, the plot, or the EKF state.
+		// On rejection, c.measurement is left at its previous value so
+		// the client's subsequent Estimate request (if any) re-runs
+		// against the last good reading.
+		if !c.outlier.check(m, c.estimator.K(), c.estimator.L(), c.params.N0) {
+			pushRejected(c)
+		} else {
+			c.measurement = m
+			if c.recorder != nil {
+				c.recorder.append(c.measurement)
+			}
+			c.outCh <- messageOut{Measurement: &c.measurement}
 		}
-		c.outCh <- messageOut{Measurement: &c.measurement}
 	}
 	if msg.Estimate != nil {
 		// Need a real measurement to drive the filter. The scenario path
@@ -285,6 +299,9 @@ func handleMessage(c *connectionState, msg messageIn, ticker *time.Ticker) *time
 				c.estimator.SeedKL(kSeed, lSeed)
 				ui.Logf("INIT seed: k=%s l=%s (P default, %d samples)", fmtVec(kSeed), fmtVec(lSeed), c.initBuf.count)
 			}
+			// The seed changed (k, l); previous n_est is no longer a
+			// meaningful step-change reference.
+			c.outlier.resetBaseline()
 			// Replay buffered samples in random order so the EKF takes
 			// actual update steps against the calibration data, not just
 			// the analytic seed. Bounded to keep the post-click pause
@@ -389,6 +406,10 @@ func applyParams(c *connectionState, p params) {
 	}
 	// Restart wipes per-connection counters along with the filter.
 	c.steps = 0
+	// The outlier filter's step-change reference is no longer meaningful
+	// when (k, l) change. The running rejection counter is preserved so
+	// the user can see total rejections across a session.
+	c.outlier.resetBaseline()
 	// Rebuild estimator. For scenario source, the playback object owns its
 	// own filter so the top-level estimator is unused there but we keep
 	// it valid for manual/random source transitions.
@@ -592,7 +613,7 @@ func pushPlaybackState(c *connectionState, m []float64) {
 		out.Measurement = &meas
 	}
 	c.outCh <- out
-	ui.PushFilterState(c.params.Source, c.pb.kf, mode, c.params, m, c.pb.step)
+	ui.PushFilterState(c.params.Source, c.pb.kf, mode, c.params, m, c.pb.step, c.outlier.rejectedN)
 }
 
 func pushPlaybackStatus(c *connectionState) {
@@ -613,21 +634,23 @@ func pushParamsAndState(c *connectionState) {
 			NIS:       &nis,
 			Converged: &conv,
 		}
-		ui.PushFilterState(c.params.Source, c.pb.kf, mode, c.params, nil, c.pb.step)
+		ui.PushFilterState(c.params.Source, c.pb.kf, mode, c.params, nil, c.pb.step, c.outlier.rejectedN)
 		return
 	}
 	st := state{K: c.estimator.K(), L: c.estimator.L(), P: c.estimator.P()}
 	mode := effectiveMode(c)
 	nis := c.estimator.NIS()
 	conv := c.estimator.Converged()
+	rej := c.outlier.rejectedN
 	c.outCh <- messageOut{
 		Params:    &c.params,
 		State:     &st,
 		Mode:      &mode,
 		NIS:       &nis,
 		Converged: &conv,
+		Rejected:  &rej,
 	}
-	ui.PushFilterState(c.params.Source, c.estimator, mode, c.params, c.measurement, c.steps)
+	ui.PushFilterState(c.params.Source, c.estimator, mode, c.params, c.measurement, c.steps, rej)
 }
 
 func pushManualState(c *connectionState) {
@@ -635,13 +658,25 @@ func pushManualState(c *connectionState) {
 	mode := effectiveMode(c)
 	nis := c.estimator.NIS()
 	conv := c.estimator.Converged()
+	rej := c.outlier.rejectedN
 	c.outCh <- messageOut{
 		State:     &st,
 		Mode:      &mode,
 		NIS:       &nis,
 		Converged: &conv,
+		Rejected:  &rej,
 	}
-	ui.PushFilterState(c.params.Source, c.estimator, mode, c.params, c.measurement, c.steps)
+	ui.PushFilterState(c.params.Source, c.estimator, mode, c.params, c.measurement, c.steps, rej)
+}
+
+// pushRejected emits a counter-only update after the outlier filter
+// drops a sample. Doesn't touch filter state, the recorder, or the
+// measurement plot; just lets the UI's rejected counter advance.
+func pushRejected(c *connectionState) {
+	rej := c.outlier.rejectedN
+	c.outCh <- messageOut{Rejected: &rej}
+	mode := effectiveMode(c)
+	ui.PushFilterState(c.params.Source, c.estimator, mode, c.params, c.measurement, c.steps, rej)
 }
 
 // effectiveMode returns "INIT" while the guided-calibration buffer is
