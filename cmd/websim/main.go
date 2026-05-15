@@ -7,12 +7,24 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/westphae/magkal/internal/scenario"
 	"github.com/westphae/magkal/pkg/kalman"
+)
+
+// activeConns tracks open websocket connections so SIGINT/SIGTERM can
+// close them and let each handleConnections goroutine run its deferred
+// cleanup (in particular recorder.flush, which writes the buffered
+// samples to disk). Without this, Ctrl-C drops the goroutines on the
+// floor and any in-progress recording disappears.
+var (
+	activeConnsMu sync.Mutex
+	activeConns   = make(map[*websocket.Conn]struct{})
+	connWg        sync.WaitGroup
 )
 
 func (s state) String() string {
@@ -106,6 +118,23 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	case <-sigCh:
+		// Close active websocket connections so each handleConnections
+		// goroutine returns and runs its deferred cleanup. Wait up to
+		// 2 s for in-flight recorders to flush. Without this, defers
+		// for per-connection goroutines don't run on program exit and
+		// any active recording is lost.
+		activeConnsMu.Lock()
+		for c := range activeConns {
+			_ = c.Close()
+		}
+		activeConnsMu.Unlock()
+		done := make(chan struct{})
+		go func() { connWg.Wait(); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			ui.Logf("shutdown: 2s timeout — some connections did not clean up")
+		}
 	}
 }
 
@@ -140,6 +169,20 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	ui.Logf("client connected (%s)", r.RemoteAddr)
 	ui.IncConnections(+1)
 	defer ui.IncConnections(-1)
+
+	// Register for graceful shutdown: a signal-triggered Close on conn
+	// unblocks readLoop, which lets this goroutine return and run its
+	// remaining defers (notably recorder.flush).
+	activeConnsMu.Lock()
+	activeConns[conn] = struct{}{}
+	activeConnsMu.Unlock()
+	connWg.Add(1)
+	defer func() {
+		activeConnsMu.Lock()
+		delete(activeConns, conn)
+		activeConnsMu.Unlock()
+		connWg.Done()
+	}()
 
 	// Pull the latest persisted n0 from disk before initializing this
 	// connection. defaultParams was loaded at boot but isn't kept in
