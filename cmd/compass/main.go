@@ -388,16 +388,32 @@ func emitFrame(rt *runtime, rec *recorder) {
 
 	gpsFix := rt.gps.latest()
 	n0Ut, declDeg, inclDeg, fUt, hUt, xUt, yUt, zUt, fallback := rt.geomag.getAll()
+	// Raw track for the CSV — preserves whatever gpsd reported so post-hoc
+	// analysis can pick its own threshold.
 	trackTrueDeg := gpsFix.TrackTrue
 	trackMagDeg := math.NaN()
 	if !math.IsNaN(trackTrueDeg) {
 		trackMagDeg = wrapDeg(trackTrueDeg - declDeg)
 	}
+	// Filtered track for UI + measured-geomag + predicted-raw. Below
+	// ~0.5 m/s GPS track is unreliable as a proxy for the vehicle's facing
+	// direction (many receivers report stale or zero track when stationary),
+	// so we treat it as missing to avoid misleading UI values and to keep
+	// the measured declination from sweeping with the sensor.
+	const minTrackSpeedMps = 0.5
+	dispTrackTrueDeg := trackTrueDeg
+	if math.IsNaN(gpsFix.SpeedMps) || gpsFix.SpeedMps < minTrackSpeedMps {
+		dispTrackTrueDeg = math.NaN()
+	}
+	dispTrackMagDeg := math.NaN()
+	if !math.IsNaN(dispTrackTrueDeg) {
+		dispTrackMagDeg = wrapDeg(dispTrackTrueDeg - declDeg)
+	}
 
 	var magPred vec3
 	magPredOK := false
-	if align != nil && !math.IsNaN(trackMagDeg) {
-		magPred, magPredOK = PredictRawMag(trackMagDeg*math.Pi/180, n0Ut, inclDeg, align.R, rt.k, rt.l)
+	if align != nil && !math.IsNaN(dispTrackMagDeg) {
+		magPred, magPredOK = PredictRawMag(dispTrackMagDeg*math.Pi/180, n0Ut, inclDeg, align.R, rt.k, rt.l)
 	}
 	if !magPredOK {
 		magPred = vec3{math.NaN(), math.NaN(), math.NaN()}
@@ -448,8 +464,8 @@ func emitFrame(rt *runtime, rec *recorder) {
 		Lat:          nf(gpsFix.Lat),
 		Lon:          nf(gpsFix.Lon),
 		AltM:         nf(gpsFix.AltMSL),
-		TrackTrueDeg: nf(trackTrueDeg),
-		TrackMagDeg:  nf(trackMagDeg),
+		TrackTrueDeg: nf(dispTrackTrueDeg),
+		TrackMagDeg:  nf(dispTrackMagDeg),
 		SpeedMps:     nf(gpsFix.SpeedMps),
 		Mode:         gpsFix.Mode,
 	}
@@ -460,7 +476,7 @@ func emitFrame(rt *runtime, rec *recorder) {
 	}
 	alignPL := alignPayloadFrom(align)
 
-	measured := measureGeomag(magCal, accel, headingVehOK, headingVehDeg, trackTrueDeg)
+	measured := measureGeomag(magCal, accel, headingVehOK, headingVehDeg, dispTrackTrueDeg)
 
 	out := messageOut{
 		IMU:              &imu,

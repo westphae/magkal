@@ -77,7 +77,7 @@
                         <tr>
                             <td><span class="dot dot-mag"></span>Mag heading (vehicle)</td>
                             <td>{{ fmtDeg(headingVehDeg) }}</td>
-                            <td class="dim">sensor {{ fmtDeg(headingSensorDeg) }}</td>
+                            <td class="dim" title="atan2(-magCal.y, magCal.x) with no alignment applied — debug only">no-align {{ fmtDeg(headingSensorDeg) }}</td>
                         </tr>
                         <tr>
                             <td>Error</td>
