@@ -32,6 +32,31 @@ func newGeomagState(fallbackN0 float64) *geomagState {
 	return &geomagState{n0Ut: fallbackN0, fUt: fallbackN0, fallback: true}
 }
 
+// seedFromLocation runs WMM at a user-supplied (lat, lon, altMEllipsoid) so
+// the UI shows a full geomag model before GPS has a fix. The fallback flag
+// stays true — a real GPS fix supersedes the config-supplied seed.
+func (g *geomagState) seedFromLocation(lat, lon, altM float64) error {
+	loc := egm96.NewLocationGeodetic(lat, lon, altM)
+	mf, err := wmm.CalculateWMMMagneticField(loc, time.Now())
+	if err != nil {
+		return err
+	}
+	xNT, yNT, zNT, _, _, _ := mf.Ellipsoidal()
+	const ntToUt = 1.0 / 1000.0
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.n0Ut = mf.F() * ntToUt
+	g.declDeg = mf.D()
+	g.inclDeg = mf.I()
+	g.fUt = mf.F() * ntToUt
+	g.hUt = mf.H() * ntToUt
+	g.xUt = xNT * ntToUt
+	g.yUt = yNT * ntToUt
+	g.zUt = zNT * ntToUt
+	// fallback stays true; a real GPS fix is still expected to replace this.
+	return nil
+}
+
 func (g *geomagState) get() (n0Ut, declDeg, inclDeg float64, fallback bool) {
 	g.mu.RLock()
 	defer g.mu.RUnlock()

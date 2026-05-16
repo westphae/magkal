@@ -202,10 +202,25 @@ func main() {
 	}
 
 	fallbackN0 := 50.0
-	if cfg, err := loadConfig(); err == nil && cfg != nil && cfg.N0 > 0 {
-		fallbackN0 = cfg.N0
+	var cfg *configFile
+	if c, err := loadConfig(); err == nil && c != nil {
+		cfg = c
+		if c.N0 > 0 {
+			fallbackN0 = c.N0
+		}
 	}
 	rt.geomag = newGeomagState(fallbackN0)
+	if cfg != nil && cfg.Lat != nil && cfg.Lon != nil {
+		alt := 0.0
+		if cfg.AltM != nil {
+			alt = *cfg.AltM
+		}
+		if err := rt.geomag.seedFromLocation(*cfg.Lat, *cfg.Lon, alt); err != nil {
+			log.Printf("compass: config WMM seed failed: %v", err)
+		} else {
+			log.Printf("compass: WMM seeded from config (%.4f, %.4f, %.1fm) until GPS fix", *cfg.Lat, *cfg.Lon, alt)
+		}
+	}
 	rt.gps = &gpsSource{}
 
 	if al, err := loadAlign(); err == nil && al != nil {

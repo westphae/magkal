@@ -15,8 +15,17 @@ const (
 	alignFileName       = "align.json"
 )
 
+// configFile is the user's geographic default for when GPS isn't yet
+// available (e.g., indoors during a bench test). When Lat/Lon are present,
+// the geomag refresh runs WMM at that location on startup so the UI shows
+// a full geomag model immediately; otherwise we fall back to N0 with
+// declination/inclination = 0. AltM is meters above ellipsoid; 0 is fine
+// for most uses (WMM varies <1 nT across the geoid offset).
 type configFile struct {
-	N0 float64 `json:"n0"`
+	N0   float64  `json:"n0"`
+	Lat  *float64 `json:"lat,omitempty"`
+	Lon  *float64 `json:"lon,omitempty"`
+	AltM *float64 `json:"altM,omitempty"`
 }
 
 type bestFile struct {
