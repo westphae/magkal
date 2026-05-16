@@ -1,15 +1,23 @@
 package main
 
-import "math"
+import (
+	"fmt"
+	"math"
+)
 
-// Sensor body frame is whatever the ICM20948 driver returns. Accel is in
-// m/s² (positive when device acceleration opposes -gravity); mag_cal is the
-// calibrated k*(m - l) vector in µT. The math below makes no assumption
-// about which sensor axis is up/down/forward — it builds a local NED basis
-// from accel and (where needed) the mounting yaw offset captured at Align.
-//
-// Compass heading conventions: 0 = magnetic north, +π/2 = east, measured CW
-// from above about the local "down" direction D̂. wrap() folds to (-π, π].
+// Alignment captures the sensor's mounting attitude and yaw offset *once*,
+// when the user clicks Align with the vehicle held in a known orientation
+// (level + known heading). The resulting 3x3 matrix R maps any subsequent
+// sensor-frame vector v_s to a fixed "vehicle" frame v_v = R · v_s where
+//   row 0 (forward) = vehicle's forward direction at align time,
+//   row 1 (right)   = vehicle's right direction,
+//   row 2 (down)    = local gravity direction captured at align.
+// Heading is then a single atan2 on the horizontal components of R · m_cal.
+// No per-sample accelerometer is involved, so accel noise no longer feeds
+// into the displayed heading.
+
+// mat3 is a 3x3 rotation matrix stored row-major; mat3[i][j] is row i col j.
+type mat3 [3][3]float64
 
 func wrapPi(x float64) float64 {
 	for x > math.Pi {
@@ -21,134 +29,119 @@ func wrapPi(x float64) float64 {
 	return x
 }
 
-func vecLen(v vec3) float64 {
-	return math.Sqrt(v.X*v.X + v.Y*v.Y + v.Z*v.Z)
-}
-
-func vecScale(v vec3, s float64) vec3 { return vec3{v.X * s, v.Y * s, v.Z * s} }
-func vecAdd(a, b vec3) vec3           { return vec3{a.X + b.X, a.Y + b.Y, a.Z + b.Z} }
-func vecSub(a, b vec3) vec3           { return vec3{a.X - b.X, a.Y - b.Y, a.Z - b.Z} }
-func dot(a, b vec3) float64           { return a.X*b.X + a.Y*b.Y + a.Z*b.Z }
+func dot(a, b vec3) float64 { return a.X*b.X + a.Y*b.Y + a.Z*b.Z }
 func cross(a, b vec3) vec3 {
 	return vec3{a.Y*b.Z - a.Z*b.Y, a.Z*b.X - a.X*b.Z, a.X*b.Y - a.Y*b.X}
 }
 
-func normalize(v vec3) vec3 {
-	n := vecLen(v)
+func normalize(v vec3) (vec3, bool) {
+	n := math.Sqrt(dot(v, v))
 	if n == 0 {
-		return v
+		return vec3{}, false
 	}
-	return vecScale(v, 1/n)
+	return vec3{v.X / n, v.Y / n, v.Z / n}, true
 }
 
-// rotateAxis rotates v about the unit-length axis by angle (Rodrigues).
-func rotateAxis(v, axis vec3, angle float64) vec3 {
-	c := math.Cos(angle)
-	s := math.Sin(angle)
-	kxv := cross(axis, v)
-	kdv := dot(axis, v)
+// projectHoriz returns v projected onto the plane perpendicular to dHat,
+// normalized. Returns ok=false if v is parallel to dHat.
+func projectHoriz(v, dHat vec3) (vec3, bool) {
+	c := dot(v, dHat)
+	return normalize(vec3{v.X - c*dHat.X, v.Y - c*dHat.Y, v.Z - c*dHat.Z})
+}
+
+// applyRot returns R · v.
+func applyRot(R mat3, v vec3) vec3 {
 	return vec3{
-		v.X*c + kxv.X*s + axis.X*kdv*(1-c),
-		v.Y*c + kxv.Y*s + axis.Y*kdv*(1-c),
-		v.Z*c + kxv.Z*s + axis.Z*kdv*(1-c),
+		R[0][0]*v.X + R[0][1]*v.Y + R[0][2]*v.Z,
+		R[1][0]*v.X + R[1][1]*v.Y + R[1][2]*v.Z,
+		R[2][0]*v.X + R[2][1]*v.Y + R[2][2]*v.Z,
 	}
 }
 
-// dHatFromAccel returns the local down direction expressed in sensor coords.
-// accel measures specific force (= -gravity at rest), so down = -accel/|accel|.
-// Returns (false, _) if accel magnitude is zero.
-func dHatFromAccel(accel vec3) (vec3, bool) {
-	n := vecLen(accel)
-	if n == 0 {
-		return vec3{}, false
+// applyRotT returns R^T · v. R is orthonormal so R^T = R^-1.
+func applyRotT(R mat3, v vec3) vec3 {
+	return vec3{
+		R[0][0]*v.X + R[1][0]*v.Y + R[2][0]*v.Z,
+		R[0][1]*v.X + R[1][1]*v.Y + R[2][1]*v.Z,
+		R[0][2]*v.X + R[1][2]*v.Y + R[2][2]*v.Z,
 	}
-	return vec3{-accel.X / n, -accel.Y / n, -accel.Z / n}, true
 }
 
-// projectHoriz returns v projected onto the plane perpendicular to d, then
-// normalized. Returns (false, _) if v is parallel to d.
-func projectHoriz(v, d vec3) (vec3, bool) {
-	c := dot(v, d)
-	h := vec3{v.X - c*d.X, v.Y - c*d.Y, v.Z - c*d.Z}
-	n := vecLen(h)
-	if n == 0 {
-		return vec3{}, false
+// isValidRot returns true if R looks like a non-degenerate rotation
+// (orthonormal rows). A zero matrix loaded from disk fails this check.
+func isValidRot(R mat3) bool {
+	for i := 0; i < 3; i++ {
+		row := vec3{R[i][0], R[i][1], R[i][2]}
+		if math.Abs(dot(row, row)-1) > 1e-3 {
+			return false
+		}
 	}
-	return vecScale(h, 1/n), true
+	return true
 }
 
-// HeadingSensorTiltOn returns the compass heading (rad) of sensor-x, using
-// the accel vector to define "down". Tilt-compensated: works at any roll/pitch
-// as long as accel is dominated by gravity. Returns (0, false) on degenerate
-// inputs (zero accel or magCal parallel to D̂ or sensor-x parallel to D̂).
-func HeadingSensorTiltOn(accel, magCal vec3) (float64, bool) {
-	dHat, ok := dHatFromAccel(accel)
+// BuildAlignRotation constructs the alignment matrix R from one captured
+// (accel, magCal) sample plus the vehicle's known magnetic heading. The
+// accel vector defines the down axis (gravity); the magCal vector defines
+// magnetic north in the horizontal plane; headingMagRad is the angle (CW
+// from magnetic north, viewed from above) of the vehicle's forward axis.
+//
+// At any subsequent time, vehicle-frame mag = R · m_cal_sensor; heading
+// follows from HeadingFromAligned. The matrix is fixed for the duration
+// of the mounted session and is rebuilt only when the user re-aligns.
+func BuildAlignRotation(accel, magCal vec3, headingMagRad float64) (mat3, error) {
+	dHat, ok := normalize(vec3{-accel.X, -accel.Y, -accel.Z})
 	if !ok {
-		return 0, false
+		return mat3{}, fmt.Errorf("zero accel")
 	}
 	nHat, ok := projectHoriz(magCal, dHat)
 	if !ok {
-		return 0, false
+		return mat3{}, fmt.Errorf("magCal is parallel to gravity")
 	}
 	eHat := cross(dHat, nHat)
-	xHoriz, ok := projectHoriz(vec3{1, 0, 0}, dHat)
-	if !ok {
-		return 0, false
+	cosH := math.Cos(headingMagRad)
+	sinH := math.Sin(headingMagRad)
+	fwd := vec3{
+		cosH*nHat.X + sinH*eHat.X,
+		cosH*nHat.Y + sinH*eHat.Y,
+		cosH*nHat.Z + sinH*eHat.Z,
 	}
-	return wrapPi(math.Atan2(dot(xHoriz, eHat), dot(xHoriz, nHat))), true
+	right := cross(dHat, fwd)
+	return mat3{
+		{fwd.X, fwd.Y, fwd.Z},
+		{right.X, right.Y, right.Z},
+		{dHat.X, dHat.Y, dHat.Z},
+	}, nil
 }
 
-// HeadingSensorTiltOff returns the compass heading of sensor-x assuming the
-// sensor is level (D̂ = -sensor-z, i.e. z-up mounting). For other mountings
-// the value differs from HeadingSensorTiltOn by a constant that gets folded
-// into yaw_offset at Align time, so the displayed vehicle heading remains
-// usable for relative comparisons.
-func HeadingSensorTiltOff(magCal vec3) float64 {
-	return wrapPi(math.Atan2(magCal.Y, magCal.X))
+// HeadingFromAligned returns the compass heading (rad, magnetic) given a
+// calibrated mag vector already expressed in the vehicle frame. The
+// horizontal components have north = +x and east = -y (since right = D×N is
+// west in NED-style vehicle frame), so heading = atan2(-m.y, m.x).
+func HeadingFromAligned(magVehicle vec3) float64 {
+	return wrapPi(math.Atan2(-magVehicle.Y, magVehicle.X))
 }
 
-// VehicleHeading composes the sensor heading with the saved mounting yaw
-// offset to produce the compass heading of the vehicle's forward axis.
-func VehicleHeading(headingSensor, yawOffset float64) float64 {
-	return wrapPi(headingSensor + yawOffset)
-}
-
-// PredictRawMag returns the raw magnetometer reading that the model would
-// produce at the given truth heading. Inverts the per-axis calibration after
-// computing the predicted calibrated-n vector in sensor frame.
-//
-// trackMag is the compass heading of the vehicle's forward axis (rad), n0Ut
-// is the local field magnitude (µT), incl is the magnetic inclination
-// (positive down, deg), and yawOffset is the saved mounting offset (rad).
-// Returns (zero, false) on degenerate accel.
-func PredictRawMag(trackMag, n0Ut, inclDeg, yawOffset float64, accel vec3, k, l []float64) (vec3, bool) {
-	dHat, ok := dHatFromAccel(accel)
-	if !ok {
-		return vec3{}, false
-	}
-	xHoriz, ok := projectHoriz(vec3{1, 0, 0}, dHat)
-	if !ok {
-		return vec3{}, false
-	}
-	// Sensor-x has compass heading β = trackMag - yawOffset; magnetic-north
-	// in sensor coords is xHoriz rotated by -β about D̂.
-	beta := trackMag - yawOffset
-	nHat := rotateAxis(xHoriz, dHat, -beta)
-	incl := inclDeg * math.Pi / 180
-	cosI := math.Cos(incl)
-	sinI := math.Sin(incl)
-	nPred := vec3{
-		n0Ut*cosI*nHat.X + n0Ut*sinI*dHat.X,
-		n0Ut*cosI*nHat.Y + n0Ut*sinI*dHat.Y,
-		n0Ut*cosI*nHat.Z + n0Ut*sinI*dHat.Z,
-	}
+// PredictRawMag returns the raw magnetometer reading the model expects at
+// the given compass heading, given the alignment R, local field parameters
+// (n0 in µT, inclination in deg), and the per-axis calibration (k, l).
+// Used to overlay "expected" vs "measured" raw mag on the UI/CSV.
+func PredictRawMag(headingMagRad, n0Ut, inclDeg float64, R mat3, k, l []float64) (vec3, bool) {
 	if len(k) < 3 || len(l) < 3 || k[0] == 0 || k[1] == 0 || k[2] == 0 {
 		return vec3{}, false
 	}
+	incl := inclDeg * math.Pi / 180
+	cosI := math.Cos(incl)
+	sinI := math.Sin(incl)
+	mV := vec3{
+		n0Ut * cosI * math.Cos(headingMagRad),
+		-n0Ut * cosI * math.Sin(headingMagRad),
+		n0Ut * sinI,
+	}
+	mS := applyRotT(R, mV)
 	return vec3{
-		l[0] + nPred.X/k[0],
-		l[1] + nPred.Y/k[1],
-		l[2] + nPred.Z/k[2],
+		l[0] + mS.X/k[0],
+		l[1] + mS.Y/k[1],
+		l[2] + mS.Z/k[2],
 	}, true
 }
 

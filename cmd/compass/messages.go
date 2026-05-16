@@ -7,8 +7,9 @@ import "time"
 // fields they don't recognize.
 
 type messageIn struct {
-	Action   string `json:"action,omitempty"`   // "align"
-	TiltComp *bool  `json:"tiltComp,omitempty"` // toggle tilt compensation
+	Action           string   `json:"action,omitempty"`           // "align"
+	MagEMA           *bool    `json:"magEma,omitempty"`           // toggle display-path EMA
+	ManualHeadingDeg *float64 `json:"manualHeadingDeg,omitempty"` // align target (deg *magnetic*); nil = use GPS track (which is true-deg, server subtracts declination)
 }
 
 type vec3 struct {
@@ -53,9 +54,14 @@ type predictedPayload struct {
 	MagPred vec3 `json:"magPred"` // µT raw expected at GPS track heading
 }
 
+// alignPayload reports the current alignment state. Active=false before any
+// alignment has been captured (no heading is shown in the UI in that state).
+// AlignHeadingDeg is the user-supplied (or GPS-track-derived) magnetic
+// heading at the moment Align was clicked.
 type alignPayload struct {
-	YawOffsetDeg float64   `json:"yawOffsetDeg"`
-	SavedAt      time.Time `json:"savedAt"`
+	Active          bool      `json:"active"`
+	AlignHeadingDeg float64   `json:"alignHeadingDeg"`
+	SavedAt         time.Time `json:"savedAt"`
 }
 
 type calPayload struct {
@@ -72,6 +78,6 @@ type messageOut struct {
 	Geomag           *geomagPayload    `json:"geomag,omitempty"`
 	Align            *alignPayload     `json:"align,omitempty"`
 	Cal              *calPayload       `json:"cal,omitempty"`
-	TiltComp         *bool             `json:"tiltComp,omitempty"`
+	MagEMA           *bool             `json:"magEma,omitempty"`
 	Error            string            `json:"error,omitempty"`
 }

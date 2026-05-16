@@ -20,43 +20,55 @@ import (
 )
 
 var (
-	addr        = flag.String("addr", "0.0.0.0:8001", "listen address for HTTP/websocket")
-	rateHz      = flag.Int("hz", 10, "UI/CSV emit rate (Hz)")
-	imuHz       = flag.Int("imu-hz", 100, "IIO trigger rate (Hz); 100 captures every fresh AK09916 mag sample for boxcar averaging")
-	wwwDir      = flag.String("www", "", "path to www/ (defaults to ./www relative to binary)")
-	magTau      = flag.Float64("mag-tau", 0.5, "EMA time constant (s) on the (already-averaged) mag vector feeding heading; 0 disables")
-	accelDLPF   = flag.Float64("accel-dlpf-hz", 11.5, "on-chip accel DLPF cutoff (Hz); snapped to nearest kernel-available value")
-	gyroDLPF    = flag.Float64("gyro-dlpf-hz", 11.6, "on-chip gyro DLPF cutoff (Hz); snapped to nearest kernel-available value")
-	accelScaleG = flag.Int("accel-scale-g", 2, "accel full-scale range (G): 2/4/8/16")
+	addr         = flag.String("addr", "0.0.0.0:8001", "listen address for HTTP/websocket")
+	rateHz       = flag.Int("hz", 10, "UI/CSV emit rate (Hz)")
+	imuHz        = flag.Int("imu-hz", 100, "IIO trigger rate (Hz); 100 captures every fresh AK09916 mag sample for boxcar averaging")
+	wwwDir       = flag.String("www", "", "path to www/ (defaults to ./www relative to binary)")
+	magTau       = flag.Float64("mag-tau", 0.5, "EMA time constant (s) on the (already-averaged) mag vector when the UI EMA toggle is on")
+	alignTau     = flag.Float64("align-tau", 1.0, "long EMA time constant (s) on accel+mag used for the Align snapshot; always on")
+	accelDLPF    = flag.Float64("accel-dlpf-hz", 11.5, "on-chip accel DLPF cutoff (Hz); snapped to nearest kernel-available value")
+	gyroDLPF     = flag.Float64("gyro-dlpf-hz", 11.6, "on-chip gyro DLPF cutoff (Hz); snapped to nearest kernel-available value")
+	accelScaleG  = flag.Int("accel-scale-g", 2, "accel full-scale range (G): 2/4/8/16")
 	gyroScaleDps = flag.Int("gyro-scale-dps", 250, "gyro full-scale range (dps): 250/500/1000/2000")
 )
 
 // runtime holds the shared, mutable server-side state.
 type runtime struct {
-	k          []float64
-	l          []float64
-	n          int
-	gps        *gpsSource
-	geomag     *geomagState
-	imuSample  atomic.Pointer[icm20948.Sample]
-	tiltCompOn atomic.Bool
-	alignMu    sync.RWMutex
-	yawOffset  float64 // rad
-	alignAt    time.Time
-	bc         *broadcaster
-	// magEMA smooths the (already boxcar-averaged) mag vector that feeds the
-	// heading computation. The unsmoothed magCal still goes to UI/CSV; only
-	// the heading path sees the EMA output.
-	magEMA *vec3EMA
-	// magAcc accumulates fresh mag-calibrated samples since the last emit
-	// tick; emitFrame drains it for boxcar averaging at rateHz. Accel/gyro
-	// already get their noise reduction from the on-chip DLPF, so they're
-	// just sampled at the latest value (via rt.imuSample).
-	magAcc magAccumulator
-	// Latest values used by the heading display, so doAlign can capture the
-	// same vectors the user sees on the dial.
-	smoothAccel atomic.Pointer[vec3]
-	smoothMag   atomic.Pointer[vec3]
+	k         []float64
+	l         []float64
+	n         int
+	gps       *gpsSource
+	geomag    *geomagState
+	imuSample atomic.Pointer[icm20948.Sample]
+
+	// align is the current sensor→vehicle rotation captured at Align time,
+	// plus the heading the user supplied as truth. nil means "no alignment
+	// yet"; heading is suppressed in the UI/CSV until Align is pressed.
+	align atomic.Pointer[alignState]
+
+	bc *broadcaster
+
+	// magEMAOn gates the optional display-path EMA. Default off — the
+	// boxcar mean over imuHz/rateHz samples already gives ~√N noise
+	// reduction and the user is evaluating whether the EMA buys anything
+	// more for steady-state heading display.
+	magEMAOn      atomic.Bool
+	displayMagEMA *vec3EMA
+	magAcc        magAccumulator
+
+	// alignAccelEMA/alignMagEMA feed only the Align snapshot — long tau,
+	// always on, so the user gets a clean (accel, mag) capture independent
+	// of the UI display filter.
+	alignAccelEMA *vec3EMA
+	alignMagEMA   *vec3EMA
+	smoothAccel   atomic.Pointer[vec3]
+	smoothMag     atomic.Pointer[vec3]
+}
+
+type alignState struct {
+	R               mat3
+	AlignHeadingDeg float64
+	SavedAt         time.Time
 }
 
 // magAccumulator collects calibrated-mag vectors arriving at the trigger rate
@@ -120,19 +132,6 @@ func (f *vec3EMA) update(v vec3) vec3 {
 	return f.prev
 }
 
-func (rt *runtime) setAlign(yawOffset float64, at time.Time) {
-	rt.alignMu.Lock()
-	rt.yawOffset = yawOffset
-	rt.alignAt = at
-	rt.alignMu.Unlock()
-}
-
-func (rt *runtime) getAlign() (float64, time.Time) {
-	rt.alignMu.RLock()
-	defer rt.alignMu.RUnlock()
-	return rt.yawOffset, rt.alignAt
-}
-
 // broadcaster fans out one messageOut to any number of websocket subscribers.
 // Each subscriber has a small buffer; slow consumers see frames dropped (the
 // CSV log is the persistent record, so the UI dropping the occasional frame
@@ -180,12 +179,13 @@ func main() {
 
 	dt := 1.0 / float64(*rateHz)
 	rt := &runtime{
-		bc:     newBroadcaster(),
-		magEMA: newVec3EMA(dt, *magTau),
+		bc:            newBroadcaster(),
+		displayMagEMA: newVec3EMA(dt, *magTau),
+		alignAccelEMA: newVec3EMA(dt, *alignTau),
+		alignMagEMA:   newVec3EMA(dt, *alignTau),
 	}
-	rt.tiltCompOn.Store(true)
-	log.Printf("compass: imu=%d Hz, emit=%d Hz, accel/gyro DLPF=%.1f/%.1f Hz, mag tau=%.2fs",
-		*imuHz, *rateHz, *accelDLPF, *gyroDLPF, *magTau)
+	log.Printf("compass: imu=%d Hz, emit=%d Hz, accel/gyro DLPF=%.1f/%.1f Hz, mag tau=%.2fs, align tau=%.2fs",
+		*imuHz, *rateHz, *accelDLPF, *gyroDLPF, *magTau, *alignTau)
 
 	best, err := loadBest()
 	if err != nil {
@@ -209,11 +209,16 @@ func main() {
 	rt.gps = &gpsSource{}
 
 	if al, err := loadAlign(); err == nil && al != nil {
-		rt.setAlign(al.YawOffsetRad, al.SavedAt)
-		log.Printf("compass: loaded align.json: yaw_offset=%.2f° saved=%s",
-			al.YawOffsetRad*180/math.Pi, al.SavedAt.Format(time.RFC3339))
+		if isValidRot(al.R) {
+			st := &alignState{R: al.R, AlignHeadingDeg: al.AlignHeadingDeg, SavedAt: al.SavedAt}
+			rt.align.Store(st)
+			log.Printf("compass: loaded align.json: heading=%.2f° saved=%s",
+				al.AlignHeadingDeg, al.SavedAt.Format(time.RFC3339))
+		} else {
+			log.Printf("compass: align.json present but R is not a valid rotation; starting unaligned")
+		}
 	} else {
-		log.Printf("compass: no align.json (yaw_offset = 0)")
+		log.Printf("compass: no align.json (compass unaligned; click Align to capture)")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -327,31 +332,44 @@ func emitFrame(rt *runtime, rec *recorder) {
 	magRaw := vec3{smp.MagX, smp.MagY, smp.MagZ}
 	magCal := ApplyCal(magRaw, rt.k, rt.l)
 
-	// Heading uses the boxcar mean of every mag sample since the last emit
-	// (√N reduction in mag noise vs. taking the latest), then a single-pole
-	// EMA to soften residual flicker. Accel comes through the on-chip DLPF,
-	// so we use the latest sample without additional smoothing. UI/CSV
-	// continue to show the raw single-sample magCal.
-	magBoxcar, _, magBoxcarOK := rt.magAcc.drain()
-	if !magBoxcarOK {
+	// Boxcar-mean every per-sample calibrated mag arrived since the last
+	// emit. Accel comes through the on-chip DLPF so we just take the
+	// latest sample. UI/CSV still show the raw single-sample magCal.
+	magBoxcar, _, ok := rt.magAcc.drain()
+	if !ok {
 		magBoxcar = magCal
 	}
-	magCalF := rt.magEMA.update(magBoxcar)
-	af, mf := accel, magCalF
-	rt.smoothAccel.Store(&af)
-	rt.smoothMag.Store(&mf)
 
-	tco := rt.tiltCompOn.Load()
-	var headingSensor float64
-	var headingOK bool
-	if tco {
-		headingSensor, headingOK = HeadingSensorTiltOn(accel, magCalF)
-	} else {
-		headingSensor = HeadingSensorTiltOff(magCalF)
-		headingOK = true
+	// Always update the align-purpose long-tau EMAs so Align has a stable
+	// capture regardless of the display EMA toggle.
+	sAccel := rt.alignAccelEMA.update(accel)
+	sMag := rt.alignMagEMA.update(magBoxcar)
+	rt.smoothAccel.Store(&sAccel)
+	rt.smoothMag.Store(&sMag)
+
+	// Display path: boxcar by default; optional short-tau EMA on top.
+	emaOn := rt.magEMAOn.Load()
+	displayMag := magBoxcar
+	if emaOn {
+		displayMag = rt.displayMagEMA.update(magBoxcar)
 	}
-	yaw, savedAt := rt.getAlign()
-	headingVeh := VehicleHeading(headingSensor, yaw)
+
+	// Sensor-frame heading is a debug-only readout: what the compass
+	// would say if sensor-x were vehicle-forward and the sensor were
+	// level. Always defined.
+	headingSensor := wrapPi(math.Atan2(-displayMag.Y, displayMag.X))
+	headingSensorDeg := headingSensor * 180 / math.Pi
+
+	// Vehicle heading requires an alignment. Without it, the UI/CSV
+	// show "—" / NaN.
+	align := rt.align.Load()
+	var headingVehDeg float64
+	headingVehOK := false
+	if align != nil {
+		magVeh := applyRot(align.R, displayMag)
+		headingVehDeg = HeadingFromAligned(magVeh) * 180 / math.Pi
+		headingVehOK = true
+	}
 
 	gpsFix := rt.gps.latest()
 	n0Ut, declDeg, inclDeg, fUt, hUt, xUt, yUt, zUt, fallback := rt.geomag.getAll()
@@ -362,12 +380,17 @@ func emitFrame(rt *runtime, rec *recorder) {
 	}
 
 	var magPred vec3
-	var magPredOK bool
-	if !math.IsNaN(trackMagDeg) {
-		magPred, magPredOK = PredictRawMag(trackMagDeg*math.Pi/180, n0Ut, inclDeg, yaw, accel, rt.k, rt.l)
+	magPredOK := false
+	if align != nil && !math.IsNaN(trackMagDeg) {
+		magPred, magPredOK = PredictRawMag(trackMagDeg*math.Pi/180, n0Ut, inclDeg, align.R, rt.k, rt.l)
 	}
 	if !magPredOK {
 		magPred = vec3{math.NaN(), math.NaN(), math.NaN()}
+	}
+
+	alignHeading := math.NaN()
+	if align != nil {
+		alignHeading = align.AlignHeadingDeg
 	}
 
 	now := time.Now()
@@ -379,20 +402,19 @@ func emitFrame(rt *runtime, rec *recorder) {
 		MagRaw:           magRaw,
 		MagCal:           magCal,
 		MagPred:          magPred,
-		TiltComp:         tco,
+		MagEMA:           emaOn,
 		TempC:            smp.TempC,
 		GPS:              gpsFix,
 		TrackMagDeg:      trackMagDeg,
 		N0Ut:             n0Ut,
 		DeclDeg:          declDeg,
 		InclDeg:          inclDeg,
-		YawOffsetDeg:     yaw * 180 / math.Pi,
-		HeadingSensorDeg: math.NaN(),
+		AlignHeadingDeg:  alignHeading,
+		HeadingSensorDeg: headingSensorDeg,
 		HeadingVehDeg:    math.NaN(),
 	}
-	if headingOK {
-		row.HeadingSensorDeg = headingSensor * 180 / math.Pi
-		row.HeadingVehDeg = headingVeh * 180 / math.Pi
+	if headingVehOK {
+		row.HeadingVehDeg = headingVehDeg
 	}
 	if err := rec.Write(row); err != nil {
 		log.Printf("compass: csv write: %v", err)
@@ -421,24 +443,29 @@ func emitFrame(rt *runtime, rec *recorder) {
 		FUt: fUt, HUt: hUt, XUt: xUt, YUt: yUt, ZUt: zUt,
 		Fallback: fallback,
 	}
-	align := alignPayload{YawOffsetDeg: yaw * 180 / math.Pi, SavedAt: savedAt}
+	alignPL := alignPayloadFrom(align)
 
 	out := messageOut{
-		IMU:    &imu,
-		GPS:    &gps,
-		Geomag: &gm,
-		Align:  &align,
+		IMU:              &imu,
+		GPS:              &gps,
+		Geomag:           &gm,
+		Align:            &alignPL,
+		HeadingSensorDeg: &headingSensorDeg,
 	}
-	if headingOK {
-		hs := headingSensor * 180 / math.Pi
-		hv := headingVeh * 180 / math.Pi
-		out.HeadingSensorDeg = &hs
-		out.HeadingVehDeg = &hv
+	if headingVehOK {
+		out.HeadingVehDeg = &headingVehDeg
 	}
 	if magPredOK {
 		out.Predicted = &predictedPayload{MagPred: magPred}
 	}
 	rt.bc.publish(out)
+}
+
+func alignPayloadFrom(a *alignState) alignPayload {
+	if a == nil {
+		return alignPayload{Active: false}
+	}
+	return alignPayload{Active: true, AlignHeadingDeg: a.AlignHeadingDeg, SavedAt: a.SavedAt}
 }
 
 var upgrader = websocket.Upgrader{
@@ -460,14 +487,14 @@ func handleConn(ctx context.Context, rt *runtime, w http.ResponseWriter, r *http
 	sub := rt.bc.subscribe()
 	defer rt.bc.unsubscribe(sub)
 
-	// Initial snapshot: calibration + align + tilt-comp.
-	yaw, savedAt := rt.getAlign()
-	yawDeg := yaw * 180 / math.Pi
-	tco := rt.tiltCompOn.Load()
+	// Initial snapshot: calibration + align state + EMA toggle.
+	align := rt.align.Load()
+	alignPL := alignPayloadFrom(align)
+	ema := rt.magEMAOn.Load()
 	if err := conn.WriteJSON(messageOut{
-		Cal:      &calPayload{K: rt.k, L: rt.l},
-		Align:    &alignPayload{YawOffsetDeg: yawDeg, SavedAt: savedAt},
-		TiltComp: &tco,
+		Cal:    &calPayload{K: rt.k, L: rt.l},
+		Align:  &alignPL,
+		MagEMA: &ema,
 	}); err != nil {
 		return
 	}
@@ -490,56 +517,61 @@ func handleConn(ctx context.Context, rt *runtime, w http.ResponseWriter, r *http
 }
 
 func handleClientMessage(rt *runtime, msg messageIn, conn *websocket.Conn) {
-	if msg.TiltComp != nil {
-		rt.tiltCompOn.Store(*msg.TiltComp)
-		tc := *msg.TiltComp
-		_ = conn.WriteJSON(messageOut{TiltComp: &tc})
+	if msg.MagEMA != nil {
+		rt.magEMAOn.Store(*msg.MagEMA)
+		v := *msg.MagEMA
+		_ = conn.WriteJSON(messageOut{MagEMA: &v})
 	}
 	if msg.Action == "align" {
-		if err := doAlign(rt); err != nil {
+		if err := doAlign(rt, msg.ManualHeadingDeg); err != nil {
 			_ = conn.WriteJSON(messageOut{Error: err.Error()})
 			return
 		}
-		yaw, savedAt := rt.getAlign()
-		yawDeg := yaw * 180 / math.Pi
-		_ = conn.WriteJSON(messageOut{Align: &alignPayload{YawOffsetDeg: yawDeg, SavedAt: savedAt}})
+		alignPL := alignPayloadFrom(rt.align.Load())
+		_ = conn.WriteJSON(messageOut{Align: &alignPL})
 	}
 }
 
-func doAlign(rt *runtime) error {
+// doAlign builds the sensor→vehicle rotation from the current smoothed
+// (accel, mag) snapshot and the heading the user (or the GPS track)
+// supplies as truth. manualHeadingMagDeg, if non-nil, is the vehicle's
+// magnetic heading (matches the convention used everywhere else on the
+// dial — the GPS-track path converts trackTrue → trackMag with the model
+// declination, and the manual-input path skips that conversion since the
+// user types magnetic directly).
+func doAlign(rt *runtime, manualHeadingMagDeg *float64) error {
 	if rt.imuSample.Load() == nil {
 		return fmt.Errorf("no IMU sample yet")
 	}
 	accelP := rt.smoothAccel.Load()
 	magP := rt.smoothMag.Load()
 	if accelP == nil || magP == nil {
-		return fmt.Errorf("filter not warmed up yet")
+		return fmt.Errorf("filter not warmed up yet — wait ~3s after start")
 	}
-	fix := rt.gps.latest()
-	if !fix.Valid || math.IsNaN(fix.TrackTrue) {
-		return fmt.Errorf("GPS fix or track unavailable")
-	}
-	_, declDeg, _, _ := rt.geomag.get()
-	trackMag := wrapPi((fix.TrackTrue - declDeg) * math.Pi / 180)
 
-	var hs float64
-	if rt.tiltCompOn.Load() {
-		h, ok := HeadingSensorTiltOn(*accelP, *magP)
-		if !ok {
-			return fmt.Errorf("degenerate accel/mag at align")
-		}
-		hs = h
+	var headingMagDeg float64
+	if manualHeadingMagDeg != nil {
+		headingMagDeg = wrapDeg(*manualHeadingMagDeg)
 	} else {
-		hs = HeadingSensorTiltOff(*magP)
+		_, declDeg, _, _ := rt.geomag.get()
+		fix := rt.gps.latest()
+		if !fix.Valid || math.IsNaN(fix.TrackTrue) {
+			return fmt.Errorf("no GPS track; supply a manual heading or wait for a 2D+ fix")
+		}
+		headingMagDeg = wrapDeg(fix.TrackTrue - declDeg)
 	}
-	yaw := wrapPi(trackMag - hs)
+
+	R, err := BuildAlignRotation(*accelP, *magP, headingMagDeg*math.Pi/180)
+	if err != nil {
+		return fmt.Errorf("build alignment: %w", err)
+	}
 	now := time.Now()
-	if err := saveAlign(&alignFile{YawOffsetRad: yaw, SavedAt: now}); err != nil {
+	st := &alignState{R: R, AlignHeadingDeg: headingMagDeg, SavedAt: now}
+	if err := saveAlign(&alignFile{R: R, AlignHeadingDeg: headingMagDeg, SavedAt: now}); err != nil {
 		return fmt.Errorf("save align.json: %w", err)
 	}
-	rt.setAlign(yaw, now)
-	log.Printf("compass: align: heading_sensor=%.2f° track_mag=%.2f° yaw_offset=%.2f°",
-		hs*180/math.Pi, trackMag*180/math.Pi, yaw*180/math.Pi)
+	rt.align.Store(st)
+	log.Printf("compass: align: heading_mag=%.2f° (R captured)", headingMagDeg)
 	return nil
 }
 

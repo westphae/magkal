@@ -2,6 +2,7 @@ package main
 
 import (
 	"math"
+	"strconv"
 	"testing"
 )
 
@@ -11,72 +12,40 @@ func approx(a, b float64) bool { return math.Abs(a-b) < tol }
 
 func degToRad(d float64) float64 { return d * math.Pi / 180 }
 
-// z-up mounting helper: given a compass heading β (rad) for sensor-x and an
-// inclination (rad), return the calibrated mag vector in sensor coords. Uses
-// the world coordinate construction: sensor-x at compass β, sensor-z = up,
-// so sensor-y at compass β-90°. The world field has N component cos(incl)*n0,
-// D component sin(incl)*n0; world Up = -world D.
-func magCalZUp(beta, incl, n0 float64) vec3 {
-	// sensor-x = cos(β)N + sin(β)E (horizontal)
-	// sensor-y = cos(β-90°)N + sin(β-90°)E = sin(β)N - cos(β)E
-	// World mag = n0*cos(incl) N + n0*sin(incl) D = n0*cos(incl) N + 0 E + n0*sin(incl) D
-	// In sensor coords: mag.x = N*cos(β) + E*sin(β) = n0*cos(incl)*cos(β)
-	//                   mag.y = N*sin(β) - E*cos(β) = n0*cos(incl)*sin(β)
-	//                   mag.z = -D = -n0*sin(incl)   (sensor-z = up = -world-D)
-	return vec3{
-		n0 * math.Cos(incl) * math.Cos(beta),
-		n0 * math.Cos(incl) * math.Sin(beta),
-		-n0 * math.Sin(incl),
-	}
-}
-
-func TestHeadingSensorTiltOnLevelCardinals(t *testing.T) {
+// TestBuildAlignRotationLevelCardinals verifies that at the moment of Align,
+// applying R to the captured mag reproduces the user-supplied heading. This
+// is the construction guarantee; multiple H_target values exercise each
+// quadrant for sign-error catches.
+func TestBuildAlignRotationLevelCardinals(t *testing.T) {
 	const n0 = 50.0
 	const inclDeg = 60.0
 	const incl = inclDeg * math.Pi / 180
 	accelLevel := vec3{0, 0, 9.81} // z-up
-
-	cases := []struct {
-		name  string
-		beta  float64
-		wantH float64
-	}{
-		{"north", 0, 0},
-		{"east", degToRad(90), degToRad(90)},
-		{"south_pos", degToRad(179), degToRad(179)},
-		{"south_neg", -degToRad(179), -degToRad(179)},
-		{"west", -degToRad(90), -degToRad(90)},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			mag := magCalZUp(c.beta, incl, n0)
-			got, ok := HeadingSensorTiltOn(accelLevel, mag)
-			if !ok {
-				t.Fatalf("not ok")
+	// At heading 0 (sensor-x = magnetic north), z-up: mag.x=cos(I), mag.z=-sin(I)*n0
+	magNorth := vec3{n0 * math.Cos(incl), 0, -n0 * math.Sin(incl)}
+	for _, hDeg := range []float64{0, 45, 90, 179, -90, -179} {
+		t.Run("h="+formatDeg(hDeg), func(t *testing.T) {
+			h := degToRad(hDeg)
+			R, err := BuildAlignRotation(accelLevel, magNorth, h)
+			if err != nil {
+				t.Fatalf("build: %v", err)
 			}
-			if !approx(got, c.wantH) {
-				t.Errorf("got %.6f want %.6f", got, c.wantH)
+			got := HeadingFromAligned(applyRot(R, magNorth))
+			if !approx(got, wrapPi(h)) {
+				t.Errorf("got %.6f want %.6f", got, h)
 			}
 		})
 	}
 }
 
-func TestHeadingSensorTiltOnPitched(t *testing.T) {
-	// 20° pitch up about sensor-y: sensor-x rotates toward sensor +z (up).
-	// Gravity in sensor coords goes from (0,0,-g) to (g*sin(20°), 0, -g*cos(20°)).
-	// accel = -gravity = (-g*sin(20°), 0, g*cos(20°))
+// TestBuildAlignRotationPitched verifies the align math handles a tilted
+// mount: a 20° pitch-up captured at heading 0 still reads heading 0.
+func TestBuildAlignRotationPitched(t *testing.T) {
 	pitch := degToRad(20)
 	const g = 9.81
 	accel := vec3{-g * math.Sin(pitch), 0, g * math.Cos(pitch)}
-
-	// World mag at heading north (β=0), incl=60°. World vec = n0*(cos(60), 0, sin(60))
-	// in NED. World-up = -D. After pitching sensor by 20° about sensor-y (which is
-	// world east), sensor-x = world-N rotated up by pitch; world-N in sensor coords
-	// after this rotation = (cos(pitch), 0, -sin(pitch)). World-D in sensor coords =
-	// (sin(pitch), 0, cos(pitch)).
 	const n0 = 50.0
-	const inclDeg = 60.0
-	const incl = inclDeg * math.Pi / 180
+	const incl = 60.0 * math.Pi / 180
 	cosI := math.Cos(incl)
 	sinI := math.Sin(incl)
 	mag := vec3{
@@ -84,62 +53,76 @@ func TestHeadingSensorTiltOnPitched(t *testing.T) {
 		0,
 		-n0*cosI*math.Sin(pitch) + n0*sinI*math.Cos(pitch),
 	}
-	got, ok := HeadingSensorTiltOn(accel, mag)
-	if !ok {
-		t.Fatalf("not ok")
+	R, err := BuildAlignRotation(accel, mag, 0)
+	if err != nil {
+		t.Fatalf("build: %v", err)
 	}
+	got := HeadingFromAligned(applyRot(R, mag))
 	if !approx(got, 0) {
 		t.Errorf("pitched-north heading got %.6f want 0", got)
 	}
 }
 
-func TestHeadingSensorTiltOffLevel(t *testing.T) {
+// TestAlignmentTracksSensorYaw verifies the substantive claim: after Align,
+// physically yawing the sensor by Δh in the world produces a heading reading
+// of H_target + Δh. Constructs the new sensor-frame mag from world geometry
+// rather than from R^T (which would be a tautology).
+func TestAlignmentTracksSensorYaw(t *testing.T) {
 	const n0 = 50.0
 	const incl = 60.0 * math.Pi / 180
-	cases := []struct {
-		name  string
-		beta  float64
-		wantH float64
-	}{
-		{"north", 0, 0},
-		{"east", degToRad(90), degToRad(90)},
-		{"west", -degToRad(90), -degToRad(90)},
+	cosI := math.Cos(incl)
+	sinI := math.Sin(incl)
+	accelLevel := vec3{0, 0, 9.81}
+	// Align at heading 0, level z-up mount. Sensor-x = world-N at align.
+	magAtAlign := vec3{n0 * cosI, 0, -n0 * sinI}
+	R, err := BuildAlignRotation(accelLevel, magAtAlign, 0)
+	if err != nil {
+		t.Fatalf("build: %v", err)
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			mag := magCalZUp(c.beta, incl, n0)
-			got := HeadingSensorTiltOff(mag)
-			if !approx(got, c.wantH) {
-				t.Errorf("got %.6f want %.6f", got, c.wantH)
-			}
-		})
+	// Yaw sensor +90° (heading east, level). Sensor-x now = world-E,
+	// sensor-y = world-N (z-up right-handed). World mag in z-up:
+	// (n0 cosI, 0, -n0 sinI). In new sensor coords:
+	// (mag·sensor_x, mag·sensor_y, mag·sensor_z) = (0, n0 cosI, -n0 sinI).
+	magYawedEast := vec3{0, n0 * cosI, -n0 * sinI}
+	got := HeadingFromAligned(applyRot(R, magYawedEast))
+	if !approx(got, degToRad(90)) {
+		t.Errorf("yawed east got %.6f want %.6f", got, degToRad(90))
 	}
 }
 
+// TestPredictRawMagRoundTripsThroughCalibration verifies the inverse: predict
+// a raw m, apply the forward calibration k*(m-l), and confirm the result is
+// the vehicle-frame mag we'd have rotated in. Catches sign errors in the
+// rotate-back direction.
 func TestPredictRawMagRoundTripsThroughCalibration(t *testing.T) {
-	// If raw m is calibrated to n, then predicting raw at the same heading as
-	// the calibrated-mag observation should reproduce m. Tests the inverse
-	// consistency: predictor(forward(m)) == m.
 	const n0 = 50.0
 	const inclDeg = 60.0
 	const incl = inclDeg * math.Pi / 180
-	beta := degToRad(45) // sensor-x at NE
-	accel := vec3{0, 0, 9.81}
-	yawOffset := degToRad(10)
-	trackMag := beta + yawOffset // so heading_vehicle = trackMag, heading_sensor = β
+	cosI := math.Cos(incl)
+	sinI := math.Sin(incl)
+	accelLevel := vec3{0, 0, 9.81}
+	magNorth := vec3{n0 * cosI, 0, -n0 * sinI}
+	// Align at heading 30° so R is non-trivial.
+	R, err := BuildAlignRotation(accelLevel, magNorth, degToRad(30))
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
 	k := []float64{0.8, 0.75, 0.68}
 	l := []float64{-49.0, 3.7, -32.0}
-
-	magCal := magCalZUp(beta, incl, n0)
-	// raw m such that k*(m-l) = magCal → m = magCal/k + l
-	raw := vec3{magCal.X/k[0] + l[0], magCal.Y/k[1] + l[1], magCal.Z/k[2] + l[2]}
-
-	pred, ok := PredictRawMag(trackMag, n0, inclDeg, yawOffset, accel, k, l)
-	if !ok {
-		t.Fatalf("not ok")
-	}
-	if !approx(pred.X, raw.X) || !approx(pred.Y, raw.Y) || !approx(pred.Z, raw.Z) {
-		t.Errorf("predictRaw got %+v want %+v", pred, raw)
+	for _, hDeg := range []float64{0, 45, 90, 180, 270} {
+		t.Run("h="+formatDeg(hDeg), func(t *testing.T) {
+			h := degToRad(hDeg)
+			mV := vec3{n0 * cosI * math.Cos(h), -n0 * cosI * math.Sin(h), n0 * sinI}
+			mS := applyRotT(R, mV)
+			rawWant := vec3{mS.X/k[0] + l[0], mS.Y/k[1] + l[1], mS.Z/k[2] + l[2]}
+			rawGot, ok := PredictRawMag(h, n0, inclDeg, R, k, l)
+			if !ok {
+				t.Fatalf("predict not ok")
+			}
+			if !approx(rawGot.X, rawWant.X) || !approx(rawGot.Y, rawWant.Y) || !approx(rawGot.Z, rawWant.Z) {
+				t.Errorf("got %+v want %+v", rawGot, rawWant)
+			}
+		})
 	}
 }
 
@@ -156,4 +139,18 @@ func TestApplyCal(t *testing.T) {
 	if !approx(got.X, want.X) || !approx(got.Y, want.Y) || !approx(got.Z, want.Z) {
 		t.Errorf("ApplyCal got %+v want %+v", got, want)
 	}
+}
+
+func TestIsValidRot(t *testing.T) {
+	if isValidRot(mat3{}) {
+		t.Errorf("zero matrix should not be valid")
+	}
+	id := mat3{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}
+	if !isValidRot(id) {
+		t.Errorf("identity should be valid")
+	}
+}
+
+func formatDeg(d float64) string {
+	return strconv.FormatFloat(d, 'f', 2, 64)
 }

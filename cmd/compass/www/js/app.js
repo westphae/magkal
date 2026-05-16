@@ -19,14 +19,16 @@
       connected: false,
       ws: null,
       error: '',
-      tiltComp: true,
+      magEMA: false,
+      manualHeadingInput: '',
 
       // calibration (from server on connect)
       k: null,
       l: null,
 
       // align
-      alignYawDeg: null,
+      alignActive: false,
+      alignHeadingDeg: null,
       alignSavedAt: null,
 
       // geomag (WMM model at current GPS location, µT / deg)
@@ -64,7 +66,19 @@
     },
     computed: {
       alignReady: function () {
-        return this.connected && this.gpsMode >= 2 && this.trackTrueDeg != null;
+        if (!this.connected) return false;
+        var manual = this.parsedManualHeading;
+        if (manual != null) return true;
+        return this.gpsMode >= 2 && this.trackTrueDeg != null;
+      },
+      parsedManualHeading: function () {
+        var raw = this.manualHeadingInput;
+        if (raw == null) return null;
+        var s = raw.toString().trim();
+        if (s === '') return null;
+        var v = Number(s);
+        if (isNaN(v)) return null;
+        return v;
       },
       magCalMag: function () {
         if (!this.magCal) return null;
@@ -130,8 +144,11 @@
         if (m.error) this.error = m.error;
         if (m.cal) { this.k = m.cal.k; this.l = m.cal.l; }
         if (m.align) {
-          this.alignYawDeg = m.align.yawOffsetDeg;
-          this.alignSavedAt = m.align.savedAt ? new Date(m.align.savedAt).toLocaleString() : null;
+          this.alignActive = !!m.align.active;
+          this.alignHeadingDeg = this.alignActive ? m.align.alignHeadingDeg : null;
+          this.alignSavedAt = (this.alignActive && m.align.savedAt)
+            ? new Date(m.align.savedAt).toLocaleString()
+            : null;
         }
         if (m.geomag) {
           this.n0Ut = m.geomag.n0Ut;
@@ -144,7 +161,7 @@
           this.zUt = m.geomag.zUt;
           this.geomagFallback = !!m.geomag.fallback;
         }
-        if (m.tiltComp != null) this.tiltComp = m.tiltComp;
+        if (m.magEma != null) this.magEMA = m.magEma;
         if (m.imu) {
           this.accel = m.imu.accel;
           this.gyro = m.imu.gyro;
@@ -169,8 +186,14 @@
       send: function (msg) {
         if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(msg));
       },
-      setTilt: function () { this.send({ tiltComp: this.tiltComp }); },
-      doAlign: function () { this.error = ''; this.send({ action: 'align' }); },
+      setEMA: function () { this.send({ magEma: this.magEMA }); },
+      doAlign: function () {
+        this.error = '';
+        var msg = { action: 'align' };
+        var manual = this.parsedManualHeading;
+        if (manual != null) msg.manualHeadingDeg = manual;
+        this.send(msg);
+      },
     },
     mounted: function () { this.connect(); },
   });

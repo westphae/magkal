@@ -23,15 +23,24 @@
     <div class="row" style="margin: 12px 0;">
         <div class="col s12">
             <button class="btn waves-effect waves-light" @click="doAlign()" :disabled="!alignReady">
-                <i class="material-icons left">explore</i>Align (use GPS track + accel)
+                <i class="material-icons left">explore</i>Align
             </button>
-            <label style="margin-left: 24px;">
-                <input type="checkbox" v-model="tiltComp" @change="setTilt()"/>
-                <span>Tilt compensation</span>
+            <span class="align-input" style="margin-left: 16px;">
+                <label for="manualHeading" style="display:inline;">Manual heading (deg magnetic):</label>
+                <input id="manualHeading" class="browser-default manual-heading"
+                       type="number" step="0.1"
+                       v-model="manualHeadingInput" placeholder="GPS track"/>
+            </span>
+            <label style="margin-left: 16px;">
+                <input type="checkbox" v-model="magEMA" @change="setEMA()"/>
+                <span>Mag EMA smoothing</span>
             </label>
             <span class="hint">
-                Yaw offset: {{ alignYawDeg != null ? alignYawDeg.toFixed(2) + '°' : '—' }}
-                <span v-if="alignSavedAt"> (saved {{ alignSavedAt }})</span>
+                <span v-if="alignActive">
+                    Aligned at {{ alignHeadingDeg != null ? alignHeadingDeg.toFixed(2) + '° mag' : '—' }}
+                    <span v-if="alignSavedAt"> ({{ alignSavedAt }})</span>
+                </span>
+                <span v-else class="dim">not aligned</span>
             </span>
             <span v-if="error" class="error-msg">{{ error }}</span>
         </div>

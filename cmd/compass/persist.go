@@ -27,9 +27,16 @@ type bestFile struct {
 	SavedAt time.Time   `json:"savedAt"`
 }
 
+// alignFile is the on-disk schema for the per-mount alignment. R is the
+// sensor→vehicle rotation (rows = [forward, right, down] in sensor frame)
+// captured at Align time; AlignHeadingDeg is the magnetic heading the user
+// (or the GPS track) supplied as truth. A file with R all zeros is treated
+// as "no alignment yet" — the binary continues without heading until Align
+// is pressed.
 type alignFile struct {
-	YawOffsetRad float64   `json:"yawOffsetRad"`
-	SavedAt      time.Time `json:"savedAt"`
+	R               [3][3]float64 `json:"r"`
+	AlignHeadingDeg float64       `json:"alignHeadingDeg"`
+	SavedAt         time.Time     `json:"savedAt"`
 }
 
 func magkalDir() (string, error) {
