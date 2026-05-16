@@ -54,6 +54,21 @@ type predictedPayload struct {
 	MagPred vec3 `json:"magPred"` // µT raw expected at GPS track heading
 }
 
+// geomagMeasuredPayload reports the geomag quantities computable directly
+// from the calibrated mag and (where needed) accel/GPS. F is always set;
+// H/ZDown/InclDeg require accel; DeclDeg/X/Y require GPS track + alignment
+// so the magnetic-vs-true heading delta is observable. Nil pointers mean
+// "not computable at this tick".
+type geomagMeasuredPayload struct {
+	F       float64  `json:"f"`              // µT, |magCal|
+	H       *float64 `json:"h,omitempty"`    // µT, horizontal magnitude (accel-required)
+	ZDown   *float64 `json:"zDown,omitempty"` // µT, vertical, positive down
+	InclDeg *float64 `json:"inclDeg,omitempty"`
+	DeclDeg *float64 `json:"declDeg,omitempty"`
+	X       *float64 `json:"x,omitempty"` // µT, geographic-north
+	Y       *float64 `json:"y,omitempty"` // µT, geographic-east
+}
+
 // alignPayload reports the current alignment state. Active=false before any
 // alignment has been captured (no heading is shown in the UI in that state).
 // AlignHeadingDeg is the user-supplied (or GPS-track-derived) magnetic
@@ -76,6 +91,7 @@ type messageOut struct {
 	HeadingVehDeg    *float64          `json:"headingVehDeg,omitempty"`
 	Predicted        *predictedPayload `json:"predicted,omitempty"`
 	Geomag           *geomagPayload    `json:"geomag,omitempty"`
+	GeomagMeasured   *geomagMeasuredPayload `json:"geomagMeasured,omitempty"`
 	Align            *alignPayload     `json:"align,omitempty"`
 	Cal              *calPayload       `json:"cal,omitempty"`
 	MagEMA           *bool             `json:"magEma,omitempty"`

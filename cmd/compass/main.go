@@ -445,10 +445,13 @@ func emitFrame(rt *runtime, rec *recorder) {
 	}
 	alignPL := alignPayloadFrom(align)
 
+	measured := measureGeomag(magCal, accel, headingVehOK, headingVehDeg, trackTrueDeg)
+
 	out := messageOut{
 		IMU:              &imu,
 		GPS:              &gps,
 		Geomag:           &gm,
+		GeomagMeasured:   &measured,
 		Align:            &alignPL,
 		HeadingSensorDeg: &headingSensorDeg,
 	}
@@ -459,6 +462,42 @@ func emitFrame(rt *runtime, rec *recorder) {
 		out.Predicted = &predictedPayload{MagPred: magPred}
 	}
 	rt.bc.publish(out)
+}
+
+// measureGeomag derives the geomag quantities computable from the current
+// calibrated mag (and where possible accel + a true-heading reference) for
+// side-by-side comparison with the WMM model.
+//   F is just |magCal| and is always defined.
+//   H, ZDown, InclDeg need gravity to split horizontal/vertical — they're
+//     omitted on a zero-accel reading.
+//   DeclDeg, X, Y need a true-heading reference (GPS trackTrue + a vehicle
+//     heading from the alignment); omitted otherwise. Note that when the
+//     alignment was captured from GPS track, DeclDeg ≈ model decl by
+//     construction (R was built using model decl); the comparison is only
+//     informative if the alignment was captured from a manual heading.
+func measureGeomag(magCal, accel vec3, haveVehHeading bool, vehHeadingMagDeg, trackTrueDeg float64) geomagMeasuredPayload {
+	out := geomagMeasuredPayload{F: math.Sqrt(dot(magCal, magCal))}
+	dHat, ok := normalize(vec3{-accel.X, -accel.Y, -accel.Z})
+	if !ok {
+		return out
+	}
+	zDown := dot(magCal, dHat)
+	horiz := vec3{magCal.X - zDown*dHat.X, magCal.Y - zDown*dHat.Y, magCal.Z - zDown*dHat.Z}
+	h := math.Sqrt(dot(horiz, horiz))
+	incl := math.Atan2(zDown, h) * 180 / math.Pi
+	out.H = &h
+	out.ZDown = &zDown
+	out.InclDeg = &incl
+	if haveVehHeading && !math.IsNaN(trackTrueDeg) {
+		d := wrapDeg(trackTrueDeg - vehHeadingMagDeg)
+		dRad := d * math.Pi / 180
+		x := h * math.Cos(dRad)
+		y := h * math.Sin(dRad)
+		out.DeclDeg = &d
+		out.X = &x
+		out.Y = &y
+	}
+	return out
 }
 
 func alignPayloadFrom(a *alignState) alignPayload {

@@ -5,6 +5,11 @@
     return proto + '//' + loc.host + '/websocket';
   }
 
+  function vecMag(v) {
+    if (!v) return null;
+    return Math.sqrt(v.x*v.x + v.y*v.y + v.z*v.z);
+  }
+
   function shortestDelta(a, b) {
     if (a == null || b == null) return null;
     var d = a - b;
@@ -56,6 +61,15 @@
       magPred: null,
       tempC: null,
 
+      // measured geomag (from cal mag + accel + GPS, where available)
+      measF: null,
+      measH: null,
+      measZ: null,
+      measInclDeg: null,
+      measDeclDeg: null,
+      measX: null,
+      measY: null,
+
       // gps
       gpsLat: null,
       gpsLon: null,
@@ -80,11 +94,9 @@
         if (isNaN(v)) return null;
         return v;
       },
-      magCalMag: function () {
-        if (!this.magCal) return null;
-        var c = this.magCal;
-        return Math.sqrt(c.x*c.x + c.y*c.y + c.z*c.z);
-      },
+      magCalMag: function () { return vecMag(this.magCal); },
+      accelMag: function () { return vecMag(this.accel); },
+      gyroMag: function () { return vecMag(this.gyro); },
       headingErrorDeg: function () {
         return shortestDelta(this.headingVehDeg, this.trackMagDeg);
       },
@@ -182,6 +194,16 @@
         if (m.headingSensorDeg != null) this.headingSensorDeg = m.headingSensorDeg;
         if (m.headingVehDeg != null) this.headingVehDeg = m.headingVehDeg;
         if (m.predicted) this.magPred = m.predicted.magPred;
+        if (m.geomagMeasured) {
+          var gm = m.geomagMeasured;
+          this.measF       = gm.f != null       ? gm.f       : null;
+          this.measH       = gm.h != null       ? gm.h       : null;
+          this.measZ       = gm.zDown != null   ? gm.zDown   : null;
+          this.measInclDeg = gm.inclDeg != null ? gm.inclDeg : null;
+          this.measDeclDeg = gm.declDeg != null ? gm.declDeg : null;
+          this.measX       = gm.x != null       ? gm.x       : null;
+          this.measY       = gm.y != null       ? gm.y       : null;
+        }
       },
       send: function (msg) {
         if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(msg));

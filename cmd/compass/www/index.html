@@ -92,24 +92,38 @@
         <div class="col s12 m6">
             <div class="card">
                 <div class="card-content">
-                    <span class="card-title">Magnetometer (µT)</span>
+                    <span class="card-title">IMU</span>
                     <table class="reading-table">
                         <thead>
-                            <tr><th></th><th>Sensor raw</th><th>Calibrated</th></tr>
+                            <tr>
+                                <th></th>
+                                <th>Mag raw (µT)</th>
+                                <th>Mag cal (µT)</th>
+                                <th>Accel (m/s²)</th>
+                                <th>Gyro (rad/s)</th>
+                            </tr>
                         </thead>
                         <tbody>
                             <tr v-for="axis in ['X','Y','Z']" :key="axis">
                                 <td>{{ axis }}</td>
                                 <td>{{ fmt2(magRaw && magRaw[axis.toLowerCase()]) }}</td>
                                 <td>{{ fmt2(magCal && magCal[axis.toLowerCase()]) }}</td>
+                                <td>{{ fmt2(accel && accel[axis.toLowerCase()]) }}</td>
+                                <td>{{ fmt2(gyro && gyro[axis.toLowerCase()]) }}</td>
+                            </tr>
+                            <tr class="magnitude-row">
+                                <td>‖·‖</td>
+                                <td>{{ fmt2(n0Ut) }} <span class="dim">n₀</span></td>
+                                <td>{{ fmt2(magCalMag) }}</td>
+                                <td>{{ fmt2(accelMag) }}</td>
+                                <td>{{ fmt2(gyroMag) }}</td>
+                            </tr>
+                            <tr>
+                                <td>Temp</td>
+                                <td colspan="4">{{ fmt2(tempC) }} °C</td>
                             </tr>
                         </tbody>
                     </table>
-                    <div class="hint">
-                        |cal| = {{ magCalMag != null ? magCalMag.toFixed(2) : '—' }} µT;
-                        n₀ = {{ n0Ut != null ? n0Ut.toFixed(2) : '—' }} µT
-                        <span v-if="geomagFallback" class="dim">(fallback)</span>
-                    </div>
                 </div>
             </div>
         </div>
@@ -132,19 +146,22 @@
 
         <div class="col s12 m6">
             <div class="card"><div class="card-content">
-                <span class="card-title">Geomag / IMU</span>
+                <span class="card-title">Geomag</span>
                 <table class="reading-table">
-                    <tr><td>Declination</td><td>{{ fmtDeg(declDeg) }}</td><td class="dim">true − mag</td></tr>
-                    <tr><td>Inclination</td><td>{{ fmtDeg(inclDeg) }}</td><td class="dim">dip below horiz</td></tr>
-                    <tr><td>F (total)</td><td>{{ fmt2(fUt) }} µT</td><td></td></tr>
-                    <tr><td>H (horizontal)</td><td>{{ fmt2(hUt) }} µT</td><td></td></tr>
-                    <tr><td>X (north)</td><td>{{ fmt2(xUt) }} µT</td><td></td></tr>
-                    <tr><td>Y (east)</td><td>{{ fmt2(yUt) }} µT</td><td></td></tr>
-                    <tr><td>Z (down)</td><td>{{ fmt2(zUt) }} µT</td><td></td></tr>
-                    <tr><td>Accel (m/s²)</td><td colspan="2">{{ fmtVec3(accel) }}</td></tr>
-                    <tr><td>Gyro (rad/s)</td><td colspan="2">{{ fmtVec3(gyro) }}</td></tr>
-                    <tr><td>Temp</td><td colspan="2">{{ fmt2(tempC) }} °C</td></tr>
+                    <thead>
+                        <tr><th></th><th>WMM model</th><th>Measured</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Declination</td><td>{{ fmtDeg(declDeg) }}</td><td>{{ fmtDeg(measDeclDeg) }}</td></tr>
+                        <tr><td>Inclination</td><td>{{ fmtDeg(inclDeg) }}</td><td>{{ fmtDeg(measInclDeg) }}</td></tr>
+                        <tr><td>F (total)</td><td>{{ fmt2(fUt) }} µT</td><td>{{ fmt2(measF) }} µT</td></tr>
+                        <tr><td>H (horizontal)</td><td>{{ fmt2(hUt) }} µT</td><td>{{ fmt2(measH) }} µT</td></tr>
+                        <tr><td>X (north)</td><td>{{ fmt2(xUt) }} µT</td><td>{{ fmt2(measX) }} µT</td></tr>
+                        <tr><td>Y (east)</td><td>{{ fmt2(yUt) }} µT</td><td>{{ fmt2(measY) }} µT</td></tr>
+                        <tr><td>Z (down)</td><td>{{ fmt2(zUt) }} µT</td><td>{{ fmt2(measZ) }} µT</td></tr>
+                    </tbody>
                 </table>
+                <div v-if="geomagFallback" class="hint dim">model from fallback config.json (no GPS fix)</div>
             </div></div>
         </div>
     </div>

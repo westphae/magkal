@@ -50,3 +50,8 @@ nav .brand-logo { padding-right: 16px; font-size: 1.2rem; }
     font-size: 0.95rem;
     margin: 0 6px;
 }
+
+.reading-table tr.magnitude-row td {
+    border-top: 2px solid #555;
+    font-weight: 500;
+}
