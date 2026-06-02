@@ -60,6 +60,9 @@ present, and is what the lock/unlock architecture is meant to neutralize.
     input (drives the predict step).
   - `Z chan float64` — the scalar measurement `n0²` (drives the EKF update
     step).
+- Per-step `log.Printf` traces (Innovation, Jacobian, S, gain, state/cov updates) are
+  **off by default**; call `kalman.SetDebug(true)` or use `replay --verbose`. Kingfisher
+  enables them only when `compass.kalman.debug` is true in config.
 - On `U` the filter does no x-evolution, only `p += q`. On `Z` it forms
   innovation `y = z - Σ n̂_i²`, computes the Jacobian of `‖n̂‖²` w.r.t. the
   state, and applies a standard EKF correction.

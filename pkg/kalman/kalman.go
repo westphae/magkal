@@ -4,7 +4,6 @@
 package kalman
 
 import (
-	"log"
 	"math"
 )
 
@@ -180,18 +179,18 @@ func (k *Filter) runFilter() {
 			for i := 0; i < k.n; i++ {
 				y -= nHat[i][0] * nHat[i][0]
 			}
-			log.Printf("Innovation y = %f\n", y)
+			debugf("Innovation y = %f\n", y)
 
 			// Calculate Jacobian (always — needed for S in both modes)
 			for i := 0; i < k.n; i++ {
 				h[0][2*i] = 2 * nHat[i][0] * nHat[i][0] / k.x[2*i][0]
 				h[0][2*i+1] = -2 * nHat[i][0] * k.x[2*i][0]
 			}
-			log.Printf("Jacobian H = %v\n", h)
+			debugf("Jacobian H = %v\n", h)
 
 			// Calculate S (always — used for gain in CAL, for NIS in LCK)
 			s = matAdd(k.r, matMul(h, matMul(k.p, matTranspose(h))))
-			log.Printf("Inn Cov s = %v\n", s)
+			debugf("Inn Cov s = %v\n", s)
 
 			// NIS = y²/S is meaningful as a fit-quality metric in CAL too
 			// (after each update, "did the filter agree with this sample?"),
@@ -215,11 +214,11 @@ func (k *Filter) runFilter() {
 			} else {
 				// CALIBRATING (or state machine disabled): normal EKF update.
 				kk = matSMul(1/s[0][0], matMul(k.p, matTranspose(h)))
-				log.Printf("Gain kk = %v\n", kk)
+				debugf("Gain kk = %v\n", kk)
 				k.x = matAdd(k.x, matSMul(y, kk))
-				log.Printf("State Update y*kk = %v\n", matSMul(y, kk))
+				debugf("State Update y*kk = %v\n", matSMul(y, kk))
 				k.p = matMul(matAdd(id, matSMul(-1, matMul(kk, h))), k.p)
-				log.Printf("Cov Update kk*h = %v\n\n", matMul(matSMul(-1, matMul(kk, h)), k.p))
+				debugf("Cov Update kk*h = %v\n\n", matMul(matSMul(-1, matMul(kk, h)), k.p))
 
 				// Check for CAL → LCK transition.
 				if k.stateMachineEnabled {

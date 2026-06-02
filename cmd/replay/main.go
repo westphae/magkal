@@ -3,8 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io"
-	"log"
 	"math/rand"
 	"os"
 
@@ -35,11 +33,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	if !*flagVerbose {
-		// pkg/kalman has noisy debug log.Printf calls in its update path; mute by
-		// default so 100k-step replays don't drown out the records.
-		log.SetOutput(io.Discard)
-	}
+	kalman.SetDebug(*flagVerbose)
 
 	script, err := scenario.Load(flag.Arg(0))
 	if err != nil {
