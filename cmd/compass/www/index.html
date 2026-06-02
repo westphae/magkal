@@ -62,9 +62,10 @@
                             <!-- GPS track needle (truth) -->
                             <line v-if="trackMagDeg != null" :x1="0" :y1="0"
                                   :x2="needle(trackMagDeg).x" :y2="needle(trackMagDeg).y" class="needle-track"/>
-                            <!-- Mag heading needle (predicted) -->
+                            <!-- Mag heading needle (predicted) — length scaled by measured H / WMM H -->
                             <line v-if="headingVehDeg != null" :x1="0" :y1="0"
-                                  :x2="needle(headingVehDeg).x" :y2="needle(headingVehDeg).y" class="needle-mag"/>
+                                  :x2="needle(headingVehDeg, magNeedleScale).x"
+                                  :y2="needle(headingVehDeg, magNeedleScale).y" class="needle-mag"/>
                             <circle cx="0" cy="0" r="3" fill="#333"/>
                         </svg>
                     </div>

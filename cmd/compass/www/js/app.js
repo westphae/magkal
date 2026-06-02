@@ -97,6 +97,13 @@
       magCalMag: function () { return vecMag(this.magCal); },
       accelMag: function () { return vecMag(this.accel); },
       gyroMag: function () { return vecMag(this.gyro); },
+      magNeedleScale: function () {
+        if (this.measH == null || this.hUt == null || this.hUt <= 0) return 1;
+        var s = this.measH / this.hUt;
+        if (s < 0.1) s = 0.1;
+        if (s > 1.15) s = 1.15;
+        return s;
+      },
       headingErrorDeg: function () {
         return shortestDelta(this.headingVehDeg, this.trackMagDeg);
       },
@@ -121,10 +128,11 @@
       },
     },
     methods: {
-      needle: function (deg) {
-        // Compass deg: 0=N=up, 90=E=right.
+      needle: function (deg, frac) {
+        // Compass deg: 0=N=up, 90=E=right. frac (optional) scales the
+        // needle length — used to visualize measured H vs WMM H.
         var rad = (deg - 90) * Math.PI / 180;
-        var r = 85;
+        var r = 85 * (frac != null && !isNaN(frac) ? frac : 1);
         return { x: r * Math.cos(rad), y: r * Math.sin(rad) };
       },
       fmtDeg: function (v) {
